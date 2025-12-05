@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Diviníssimo - Login</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="favicon.ico" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    /* RESET PARA ELIMINAR ESPAÇOS EM BRANCO */
+    * {
+      box-sizing: border-box;
+    }
+    
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: auto;
+    }
+    
+    #root {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+
+    /* GARANTIR QUE AS CLASSES EXTERNAS FUNCIONEM */
+    .login-container {
+      margin: 0 !important;
+      padding: 0 !important;
+      height: auto !important;
+      min-height: unset !important;
+      width: 100% !important;
+    }
+    
+    .container-login {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+      height: auto !important;
+      min-height: 100vh !important;
+    }
+
+    /* ANIMAÇÕES */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+    
+    @keyframes shimmer {
+      0% { background-position: -1000px 0; }
+      100% { background-position: 1000px 0; }
+    }
+    
+    .animate-fade-in { 
+      animation: fadeIn 0.6s ease-out; 
+    }
+    
+    .animate-float { 
+      animation: float 3s ease-in-out infinite; 
+    }
+    
+    .shimmer {
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      background-size: 1000px 100%;
+      animation: shimmer 2s infinite;
+    }
+    
+    .glass {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .dark .glass {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* ESTILOS ESPECÍFICOS PARA ELIMINAR ESPAÇOS */
+    .login-section {
+      margin: 0 !important;
+      padding: 0 !important;
+      height: auto !important;
+    }
+    
+    .login-wrapper {
+      margin: 0 !important;
+      padding: 0 !important;
+      height: auto !important;
+    }
+
+    /* GARANTIR QUE O BODY NÃO TENHA SCROLL DESNECESSÁRIO */
+    body {
+      overflow-x: hidden;
+    }
+    
+    /* RESPONSIVIDADE */
+    @media (max-height: 700px) {
+      #root {
+        height: auto;
+        min-height: 100vh;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased">
+  <div id="root" class="container-login"></div>
+
+  <script src="database.js"></script>
+  <script type="text/babel" src="login.js"></script>
+
+  <script>
+    // Script para garantir que as classes CSS sejam aplicadas corretamente
+    document.addEventListener('DOMContentLoaded', function() {
+      // Aplica as classes CSS imediatamente
+      const root = document.getElementById('root');
+      if (root) {
+        root.classList.add('container-login');
+      }
+      
+      // Monitora mudanças no DOM para aplicar classes em elementos dinâmicos
+      const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          if (mutation.addedNodes.length) {
+            // Aplica .login-container em qualquer elemento com essa classe
+            const loginContainers = document.querySelectorAll('.login-container');
+            loginContainers.forEach(container => {
+              container.classList.add('login-container');
+            });
+          }
+        });
+      });
+      
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+    });
+  </script>
+</body>
+</html>

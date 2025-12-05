@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Diviníssimo - Banco de Receitas</title>
+  
+  <!-- Scripts do Sistema -->
+  <script src="database.js"></script>
+  <link rel="icon" href="favicon.ico" />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React e Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Estilos Customizados -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- Configuração do Tailwind -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            green: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              200: '#bbf7d0',
+              300: '#86efac',
+              400: '#4ade80',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.5s ease-in-out',
+            'pulse-slow': 'pulse 3s infinite',
+            'slide-in': 'slideIn 0.3s ease-out',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideIn: {
+              '0%': { transform: 'translateY(-10px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Estilos Adicionais -->
+  <style>
+    :root {
+      --primary-color: #16a34a;
+      --primary-dark: #15803d;
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .smooth-transition {
+      transition: all 0.3s ease;
+    }
+    
+    .card-hover {
+      transition: all 0.3s ease;
+    }
+    
+    .card-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    
+    .animate-pulse-slow {
+      animation: pulse 3s infinite;
+    }
+    
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    
+    .status-dot.online {
+      background-color: #22c55e;
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+    }
+    
+    .status-dot.offline {
+      background-color: #ef4444;
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Scrollbar personalizada */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: #c1c1c1;
+      border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a1a1a1;
+    }
+    
+    .dark ::-webkit-scrollbar-track {
+      background: #374151;
+    }
+    
+    .dark ::-webkit-scrollbar-thumb {
+      background: #6b7280;
+    }
+    
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+    
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: loading 1.5s infinite;
+    }
+    
+    .dark .skeleton {
+      background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+      background-size: 200% 100%;
+    }
+    
+    @keyframes loading {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    
+    /* Modal backdrop blur */
+    .modal-backdrop {
+      backdrop-filter: blur(4px);
+    }
+    
+    /* Print styles para exportação */
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+      
+      body {
+        background: white !important;
+        color: black !important;
+      }
+      
+      .print-break {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased">
+  <!-- Overlay de Erro -->
+  <div id="errorOverlay" role="alert" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+      <div class="text-4xl mb-4 text-center">⚠️</div>
+      <h3 class="text-xl font-bold mb-2 text-center">Erro no Sistema</h3>
+      <p id="errorMessage" class="text-gray-600 dark:text-gray-300 mb-4 text-center"></p>
+      <div class="flex justify-center gap-3">
+        <button onclick="document.getElementById('errorOverlay').classList.add('hidden')" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+          Fechar
+        </button>
+        <button onclick="window.location.reload()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+          Recarregar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container principal do React -->
+  <div id="root" class="h-screen"></div>
+
+  <!-- Scripts da Aplicação -->
+  <script type="text/babel" src="receitas.js"></script>
+  
+  <!-- Handler de Erros -->
+  <script src="js/error-handler.js"></script>
+  
+  <!-- Script para lidar com erros globais -->
+  <script>
+    // Handler de erro global
+    window.addEventListener('error', function(event) {
+      console.error('Erro capturado:', event.error);
+      
+      const errorOverlay = document.getElementById('errorOverlay');
+      const errorMessage = document.getElementById('errorMessage');
+      
+      if (errorOverlay && errorMessage) {
+        errorMessage.textContent = event.error.message || 'Ocorreu um erro inesperado no sistema.';
+        errorOverlay.classList.remove('hidden');
+      }
+    });
+    
+    // Verificar se o React está carregado
+    window.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        if (!window.React || !window.ReactDOM) {
+          console.error('React não carregou corretamente');
+          const errorOverlay = document.getElementById('errorOverlay');
+          const errorMessage = document.getElementById('errorMessage');
+          
+          if (errorOverlay && errorMessage) {
+            errorMessage.textContent = 'Bibliotecas necessárias não carregaram. Verifique sua conexão.';
+            errorOverlay.classList.remove('hidden');
+          }
+        }
+      }, 3000);
+    });
+    
+    // Verificar conexão com internet
+    window.addEventListener('online', function() {
+      console.log('Conectado à internet');
+      showToast('✅ Conexão restaurada', 'success');
+    });
+    
+    window.addEventListener('offline', function() {
+      console.log('Sem conexão com a internet');
+      showToast('⚠️ Modo offline ativado', 'warning');
+    });
+    
+    // Função auxiliar para mostrar toasts
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg animate-fade-in ${
+        type === 'success' ? 'bg-green-500 text-white' :
+        type === 'warning' ? 'bg-amber-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        'bg-blue-500 text-white'
+      }`;
+      toast.textContent = message;
+      
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => document.body.removeChild(toast), 300);
+      }, 3000);
+    }
+    
+    // Inicializar tema do sistema
+    function initializeTheme() {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const savedTheme = localStorage.getItem('darkMode');
+      
+      if (savedTheme === 'true' || (savedTheme === null && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    
+    // Chamar inicialização do tema
+    initializeTheme();
+    
+    // Observar mudanças no tema do sistema
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+      if (!localStorage.getItem('darkMode')) {
+        if (e.matches) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+    });
+  </script>
+</body>
+</html>
