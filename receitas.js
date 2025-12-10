@@ -469,7 +469,7 @@ Exportado do Sistema Diviníssimo - Pão de Queijo
           </div>
           
           <nav className="flex-1 px-2 py-4 space-y-1">
-            {['Dashboard', 'Coleta', 'Ordens', 'Qualidade', 'Relatórios', 'Receitas'].map((item, idx) => (
+            {['Dashboard', 'Coleta', 'Ordens', 'Qualidade', 'Fornecedores' , 'Relatórios', 'Receitas'].map((item, idx) => (
               <button 
                 key={item} 
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg smooth-transition ${
@@ -482,12 +482,13 @@ Exportado do Sistema Diviníssimo - Pão de Queijo
                   if (item === 'Coleta') window.location.href = 'coleta.html';
                   if (item === 'Ordens') window.location.href = 'ordem.html';
                   if (item === 'Qualidade') window.location.href = 'qualidade.html';
+                  if (item === 'Fornecedores') window.location.href = 'fornecedores.html';
                   if (item === 'Relatórios') window.location.href = 'relatorios.html';
                   if (item === 'Receitas') window.location.href = 'receitas.html';
                 }}
               >
                 <span className="w-8 text-center text-xl">
-                  {['🏠', '📋', '📦', '🔬', '📈', '🧑‍🍳'][idx]}
+                  {['🏠', '📋', '📦', '🔬','🏭', '📈', '🧑‍🍳'][idx]}
                 </span>
                 {sidebarOpen && <span className="truncate">{item}</span>}
               </button>

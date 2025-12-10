@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diviníssimo - Fornecedores</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="database.js"></script>
+    <style>
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slide-in {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out;
+        }
+        .animate-slide-in {
+            animation: slide-in 0.3s ease-out;
+        }
+        .smooth-transition {
+            transition: all 0.2s ease-in-out;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="h-full">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, memo, useCallback } = React;
+
+        // Modal para cadastro/edição
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 animate-fade-in" onClick={onClose}>
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-auto animate-slide-in" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+                            <h2 className="text-2xl font-bold">{title}</h2>
+                            <button onClick={onClose} className="text-2xl hover:text-red-500 smooth-transition">&times;</button>
+                        </div>
+                        <div className="p-6">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Componente para exibir estrelas de avaliação
+        const RatingStars = ({ rating, size = 'text-lg' }) => {
+            return (
+                <div className={`flex ${size}`}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <span key={star} className={`${star <= rating ? 'text-yellow-500' : 'text-gray-300 dark:text-gray-600'}`}>
+                            ★
+                        </span>
+                    ))}
+                </div>
+            );
+        };
+
+        // Componente para exibir status de disponibilidade
+        const AvailabilityBadge = ({ status }) => {
+            const config = {
+                'Disponível': { color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200', icon: '✅' },
+                'Baixo Estoque': { color: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200', icon: '⚠️' },
+                'Indisponível': { color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200', icon: '❌' },
+                'Sob Encomenda': { color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200', icon: '⏳' }
+            };
+            
+            const { color, icon } = config[status] || config['Disponível'];
+            
+            return (
+                <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${color}`}>
+                    <span>{icon}</span>
+                    <span>{status}</span>
+                </div>
+            );
+        };
+
+        // Componente para exibir categoria
+        const CategoryBadge = ({ category }) => {
+            const colors = {
+                'Ingrediente': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+                'Tecnologia': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+                'Equipamento': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+                'Embalagem': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200'
+            };
+            
+            return (
+                <div className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${colors[category] || 'bg-gray-100 text-gray-800'}`}>
+                    {category}
+                </div>
+            );
+        };
+
+        function App() {
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [selectedLine, setSelectedLine] = useState("Fornecedores");
+            const [dark, setDark] = useState(false);
+            const [dbReady, setDbReady] = useState(false);
+            const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+            // Estados para fornecedores
+            const [fornecedores, setFornecedores] = useState([]);
+            const [categoriaFilter, setCategoriaFilter] = useState("Todos");
+            const [searchTerm, setSearchTerm] = useState("");
+            const [sortBy, setSortBy] = useState("nome");
+
+            // Estados para modais
+            const [showNewSupplierModal, setShowNewSupplierModal] = useState(false);
+            const [showEditModal, setShowEditModal] = useState(null);
+            const [showDeleteModal, setShowDeleteModal] = useState(null);
+            const [showDetailsModal, setShowDetailsModal] = useState(null);
+
+            // Estado para novo fornecedor
+            const [newSupplier, setNewSupplier] = useState({
+                nome: '',
+                descricao: '',
+                categoria: 'Ingrediente',
+                tipo: '',
+                precoMedio: '',
+                link: '',
+                fornecedorNome: '',
+                fornecedorContato: '',
+                fornecedorEmail: '',
+                fornecedorTelefone: '',
+                rating: 3,
+                status: 'Disponível',
+                leadTime: '',
+                unidadeMedida: 'kg',
+                estoqueMinimo: '',
+                estoqueAtual: '',
+                ultimaCompra: new Date().toISOString().split('T')[0],
+                proximaEntrega: '',
+                notas: ''
+            });
+
+            // Categorias disponíveis
+            const categorias = [
+                { id: 'ingredientes', nome: 'Ingredientes', subcategorias: ['Farinha', 'Queijo', 'Ovos', 'Leite', 'Fermento', 'Sal', 'Óleo', 'Especiarias'] },
+                { id: 'tecnologias', nome: 'Tecnologias de Produção', subcategorias: ['Sensores', 'Controladores', 'Software', 'Automação', 'IoT', 'Robótica'] },
+                { id: 'equipamentos', nome: 'Equipamentos', subcategorias: ['Forno', 'Misturador', 'Modeladora', 'Embaladora', 'Esteira', 'Resfriador'] },
+                { id: 'embalagens', nome: 'Embalagens', subcategorias: ['Plástico', 'Papel', 'Alumínio', 'Biodegradável'] }
+            ];
+
+            // Unidades de medida
+            const unidadesMedida = [
+                { value: 'kg', label: 'Quilograma (kg)' },
+                { value: 'g', label: 'Grama (g)' },
+                { value: 'L', label: 'Litro (L)' },
+                { value: 'mL', label: 'Mililitro (mL)' },
+                { value: 'un', label: 'Unidade' },
+                { value: 'cx', label: 'Caixa' },
+                { value: 'sc', label: 'Saco' },
+                { value: 'pct', label: 'Pacote' }
+            ];
+
+            // Inicializar banco de dados
+            useEffect(() => {
+                const initDB = async () => {
+                    try {
+                        if (window.db) {
+                            await window.db.init();
+                            await window.db.initializeDefaultData();
+                            
+                            // Carregar configurações
+                            const darkMode = await window.db.getConfig('dark');
+                            const line = await window.db.getConfig('selectedLine');
+                            const sidebar = await window.db.getConfig('sidebarOpen');
+                            
+                            if (darkMode !== null) setDark(darkMode);
+                            if (line !== null) setSelectedLine(line);
+                            if (sidebar !== null) setSidebarOpen(sidebar);
+                            
+                            // Carregar fornecedores do banco
+                            const savedSuppliers = await window.db.getFornecedores();
+                            if (savedSuppliers && savedSuppliers.length > 0) {
+                                setFornecedores(savedSuppliers);
+                            } else {
+                                // Inicializar com dados padrão
+                                await initializeDefaultSuppliers();
+                            }
+                            
+                            setDbReady(true);
+                        }
+                        setDbReady(true);
+                    } catch (error) {
+                        console.error('Erro ao inicializar banco de dados:', error);
+                        setDbReady(true);
+                    }
+                };
+                
+                initDB();
+            }, []);
+
+            // Inicializar fornecedores padrão
+            const initializeDefaultSuppliers = async () => {
+                const defaultSuppliers = [
+                    // Ingredientes
+                    {
+                        id: 'FORN-001',
+                        nome: 'Farinha de Trigo Especial',
+                        descricao: 'Farinha de trigo tipo 00 ideal para pão de queijo',
+                        categoria: 'Ingrediente',
+                        tipo: 'Farinha',
+                        precoMedio: 4.50,
+                        link: 'https://www.exemplo.com/farinha',
+                        fornecedorNome: 'Moinhos Brasileiros',
+                        fornecedorContato: 'João Silva',
+                        fornecedorEmail: 'vendas@moinhos.com.br',
+                        fornecedorTelefone: '(11) 99999-9999',
+                        rating: 4,
+                        status: 'Disponível',
+                        leadTime: '24h',
+                        unidadeMedida: 'kg',
+                        estoqueMinimo: 100,
+                        estoqueAtual: 250,
+                        ultimaCompra: '2025-10-05',
+                        proximaEntrega: '2025-10-12',
+                        notas: 'Produto de alta qualidade, entrega sempre pontual',
+                        createdAt: '2025-09-15'
+                    },
+                    {
+                        id: 'FORN-002',
+                        nome: 'Queijo Minas Frescal',
+                        descricao: 'Queijo minas frescal especial para pão de queijo artesanal',
+                        categoria: 'Ingrediente',
+                        tipo: 'Queijo',
+                        precoMedio: 28.90,
+                        link: 'https://www.exemplo.com/queijo',
+                        fornecedorNome: 'Laticínios Mineiros',
+                        fornecedorContato: 'Maria Santos',
+                        fornecedorEmail: 'contato@laticinios.com.br',
+                        fornecedorTelefone: '(31) 98888-8888',
+                        rating: 5,
+                        status: 'Disponível',
+                        leadTime: '48h',
+                        unidadeMedida: 'kg',
+                        estoqueMinimo: 50,
+                        estoqueAtual: 120,
+                        ultimaCompra: '2025-10-06',
+                        proximaEntrega: '2025-10-13',
+                        notas: 'Produtor tradicional, qualidade superior',
+                        createdAt: '2025-09-20'
+                    },
+                    {
+                        id: 'FORN-003',
+                        nome: 'Polvilho Doce',
+                        descricao: 'Polvilho doce de mandioca de primeira qualidade',
+                        categoria: 'Ingrediente',
+                        tipo: 'Farinha',
+                        precoMedio: 6.80,
+                        link: 'https://www.exemplo.com/polvilho',
+                        fornecedorNome: 'Indústria de Mandioca',
+                        fornecedorContato: 'Carlos Oliveira',
+                        fornecedorEmail: 'vendas@mandioca.com.br',
+                        fornecedorTelefone: '(41) 97777-7777',
+                        rating: 4,
+                        status: 'Baixo Estoque',
+                        leadTime: '72h',
+                        unidadeMedida: 'kg',
+                        estoqueMinimo: 80,
+                        estoqueAtual: 85,
+                        ultimaCompra: '2025-10-04',
+                        proximaEntrega: '2025-10-15',
+                        notas: 'Fornecedor confiável, produto consistente',
+                        createdAt: '2025-09-25'
+                    },
+                    // Tecnologias
+                    {
+                        id: 'FORN-004',
+                        nome: 'Sensor de Temperatura IoT',
+                        descricao: 'Sensor de temperatura sem fio com monitoramento em tempo real',
+                        categoria: 'Tecnologia',
+                        tipo: 'Sensores',
+                        precoMedio: 850.00,
+                        link: 'https://www.exemplo.com/sensor-iot',
+                        fornecedorNome: 'TechAutomation',
+                        fornecedorContato: 'Roberto Costa',
+                        fornecedorEmail: 'suporte@techauto.com.br',
+                        fornecedorTelefone: '(11) 96666-6666',
+                        rating: 5,
+                        status: 'Disponível',
+                        leadTime: '7 dias',
+                        unidadeMedida: 'un',
+                        estoqueMinimo: 5,
+                        estoqueAtual: 12,
+                        ultimaCompra: '2025-09-28',
+                        proximaEntrega: '2025-11-01',
+                        notas: 'Tecnologia de ponta, suporte excelente',
+                        createdAt: '2025-10-01'
+                    },
+                    {
+                        id: 'FORN-005',
+                        nome: 'Sistema de Controle de Qualidade',
+                        descricao: 'Software para controle de qualidade com análise de dados',
+                        categoria: 'Tecnologia',
+                        tipo: 'Software',
+                        precoMedio: 2500.00,
+                        link: 'https://www.exemplo.com/software-qualidade',
+                        fornecedorNome: 'QualiTech Solutions',
+                        fornecedorContato: 'Patrícia Lima',
+                        fornecedorEmail: 'comercial@qualitech.com',
+                        fornecedorTelefone: '(21) 95555-5555',
+                        rating: 4,
+                        status: 'Sob Encomenda',
+                        leadTime: '15 dias',
+                        unidadeMedida: 'un',
+                        estoqueMinimo: 1,
+                        estoqueAtual: 0,
+                        ultimaCompra: '2025-09-15',
+                        proximaEntrega: '2025-10-25',
+                        notas: 'Software robusto, curva de aprendizado',
+                        createdAt: '2025-10-05'
+                    },
+                    // Equipamentos
+                    {
+                        id: 'FORN-006',
+                        nome: 'Forno Industrial Elétrico',
+                        descricao: 'Forno industrial para pão de queijo com controle digital',
+                        categoria: 'Equipamento',
+                        tipo: 'Forno',
+                        precoMedio: 18500.00,
+                        link: 'https://www.exemplo.com/forno-industrial',
+                        fornecedorNome: 'Maquinários Alimentos',
+                        fornecedorContato: 'Ana Paula',
+                        fornecedorEmail: 'vendas@maquinarios.com.br',
+                        fornecedorTelefone: '(51) 94444-4444',
+                        rating: 4,
+                        status: 'Disponível',
+                        leadTime: '30 dias',
+                        unidadeMedida: 'un',
+                        estoqueMinimo: 1,
+                        estoqueAtual: 2,
+                        ultimaCompra: '2025-09-10',
+                        proximaEntrega: '2025-11-10',
+                        notas: 'Equipamento durável, manutenção preventiva necessária',
+                        createdAt: '2025-09-28'
+                    },
+                    {
+                        id: 'FORN-007',
+                        nome: 'Misturador de Massa Industrial',
+                        descricao: 'Misturador de 50kg com controle de velocidade',
+                        categoria: 'Equipamento',
+                        tipo: 'Misturador',
+                        precoMedio: 12500.00,
+                        link: 'https://www.exemplo.com/misturador',
+                        fornecedorNome: 'Indústrias Alimentícias',
+                        fornecedorContato: 'Fernando Alves',
+                        fornecedorEmail: 'contato@indalimentos.com',
+                        fornecedorTelefone: '(47) 93333-3333',
+                        rating: 3,
+                        status: 'Indisponível',
+                        leadTime: '45 dias',
+                        unidadeMedida: 'un',
+                        estoqueMinimo: 1,
+                        estoqueAtual: 0,
+                        ultimaCompra: '2025-08-20',
+                        proximaEntrega: '2025-12-01',
+                        notas: 'Aguardando reposição do fabricante',
+                        createdAt: '2025-09-15'
+                    },
+                    // Embalagens
+                    {
+                        id: 'FORN-008',
+                        nome: 'Embalagem Biodegradável',
+                        descricao: 'Embalagem sustentável para pão de queijo',
+                        categoria: 'Embalagem',
+                        tipo: 'Biodegradável',
+                        precoMedio: 0.35,
+                        link: 'https://www.exemplo.com/embalagem-eco',
+                        fornecedorNome: 'EcoPack Solutions',
+                        fornecedorContato: 'Lucas Mendes',
+                        fornecedorEmail: 'vendas@ecopack.com.br',
+                        fornecedorTelefone: '(19) 92222-2222',
+                        rating: 5,
+                        status: 'Disponível',
+                        leadTime: '5 dias',
+                        unidadeMedida: 'un',
+                        estoqueMinimo: 5000,
+                        estoqueAtual: 8500,
+                        ultimaCompra: '2025-10-06',
+                        proximaEntrega: '2025-10-20',
+                        notas: 'Produto sustentável, ótima aceitação no mercado',
+                        createdAt: '2025-10-03'
+                    }
+                ];
+
+                setFornecedores(defaultSuppliers);
+                
+                // Salvar no banco de dados
+                if (window.db && window.db.saveFornecedor) {
+                    for (const supplier of defaultSuppliers) {
+                        await window.db.saveFornecedor(supplier);
+                    }
+                }
+            };
+
+            // Salvar configurações
+            useEffect(() => {
+                if (dbReady && window.db) {
+                    window.db.setConfig('dark', dark);
+                }
+            }, [dark, dbReady]);
+
+            useEffect(() => {
+                if (dbReady && window.db) {
+                    window.db.setConfig('sidebarOpen', sidebarOpen);
+                }
+            }, [sidebarOpen, dbReady]);
+
+            // Aplicar tema
+            useEffect(() => {
+                if (dark) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [dark]);
+
+            // Monitorar conexão
+            useEffect(() => {
+                const handleOnline = () => setIsOnline(true);
+                const handleOffline = () => setIsOnline(false);
+                window.addEventListener('online', handleOnline);
+                window.addEventListener('offline', handleOffline);
+                return () => {
+                    window.removeEventListener('online', handleOnline);
+                    window.removeEventListener('offline', handleOffline);
+                };
+            }, []);
+
+            // Filtrar fornecedores
+            const filteredFornecedores = useMemo(() => {
+                let filtered = fornecedores;
+                
+                // Filtrar por categoria
+                if (categoriaFilter !== "Todos") {
+                    filtered = filtered.filter(f => f.categoria === categoriaFilter);
+                }
+                
+                // Filtrar por busca
+                if (searchTerm) {
+                    const term = searchTerm.toLowerCase();
+                    filtered = filtered.filter(f => 
+                        f.nome.toLowerCase().includes(term) ||
+                        f.descricao.toLowerCase().includes(term) ||
+                        f.fornecedorNome.toLowerCase().includes(term) ||
+                        f.tipo.toLowerCase().includes(term)
+                    );
+                }
+                
+                // Ordenar
+                return filtered.sort((a, b) => {
+                    switch(sortBy) {
+                        case 'nome':
+                            return a.nome.localeCompare(b.nome);
+                        case 'preco':
+                            return b.precoMedio - a.precoMedio;
+                        case 'rating':
+                            return b.rating - a.rating;
+                        case 'ultimaCompra':
+                            return new Date(b.ultimaCompra) - new Date(a.ultimaCompra);
+                        default:
+                            return 0;
+                    }
+                });
+            }, [fornecedores, categoriaFilter, searchTerm, sortBy]);
+
+            // Estatísticas
+            const stats = useMemo(() => {
+                return {
+                    total: fornecedores.length,
+                    ingredientes: fornecedores.filter(f => f.categoria === 'Ingrediente').length,
+                    tecnologias: fornecedores.filter(f => f.categoria === 'Tecnologia').length,
+                    equipamentos: fornecedores.filter(f => f.categoria === 'Equipamento').length,
+                    embalagens: fornecedores.filter(f => f.categoria === 'Embalagem').length,
+                    disponiveis: fornecedores.filter(f => f.status === 'Disponível').length,
+                    baixoEstoque: fornecedores.filter(f => f.status === 'Baixo Estoque').length,
+                    valorTotalEstoque: fornecedores.reduce((sum, f) => {
+                        return sum + (f.precoMedio * (f.estoqueAtual || 0));
+                    }, 0).toFixed(2)
+                };
+            }, [fornecedores]);
+
+            // Função para salvar fornecedor no banco
+            const saveSupplierToDB = async (supplier) => {
+                if (window.db && window.db.saveFornecedor) {
+                    return window.db.saveFornecedor(supplier);
+                }
+                return Promise.resolve();
+            };
+
+            // Handler para salvar novo fornecedor
+            const handleSaveNewSupplier = async () => {
+                if (!newSupplier.nome || !newSupplier.categoria) {
+                    alert('Preencha os campos obrigatórios!');
+                    return;
+                }
+
+                // Gerar ID único
+                const newId = `FORN-${Date.now().toString().slice(-6)}`;
+                
+                const novoFornecedor = {
+                    id: newId,
+                    ...newSupplier,
+                    precoMedio: parseFloat(newSupplier.precoMedio) || 0,
+                    estoqueMinimo: parseInt(newSupplier.estoqueMinimo) || 0,
+                    estoqueAtual: parseInt(newSupplier.estoqueAtual) || 0,
+                    rating: parseInt(newSupplier.rating),
+                    createdAt: new Date().toISOString().split('T')[0]
+                };
+
+                // Adicionar à lista
+                const updatedSuppliers = [...fornecedores, novoFornecedor];
+                setFornecedores(updatedSuppliers);
+                
+                // Salvar no banco de dados
+                await saveSupplierToDB(novoFornecedor);
+                
+                // Resetar formulário
+                setNewSupplier({
+                    nome: '',
+                    descricao: '',
+                    categoria: 'Ingrediente',
+                    tipo: '',
+                    precoMedio: '',
+                    link: '',
+                    fornecedorNome: '',
+                    fornecedorContato: '',
+                    fornecedorEmail: '',
+                    fornecedorTelefone: '',
+                    rating: 3,
+                    status: 'Disponível',
+                    leadTime: '',
+                    unidadeMedida: 'kg',
+                    estoqueMinimo: '',
+                    estoqueAtual: '',
+                    ultimaCompra: new Date().toISOString().split('T')[0],
+                    proximaEntrega: '',
+                    notas: ''
+                });
+                
+                setShowNewSupplierModal(false);
+                alert('Fornecedor cadastrado com sucesso!');
+            };
+
+            // Handler para atualizar fornecedor
+            const handleUpdateSupplier = async () => {
+                if (!showEditModal) return;
+
+                const updatedSuppliers = fornecedores.map(f => 
+                    f.id === showEditModal.id ? showEditModal : f
+                );
+                
+                setFornecedores(updatedSuppliers);
+                
+                // Atualizar no banco de dados
+                await saveSupplierToDB(showEditModal);
+                
+                setShowEditModal(null);
+                alert('Fornecedor atualizado com sucesso!');
+            };
+
+            // Handler para deletar fornecedor
+            const handleDeleteSupplier = async () => {
+                if (!showDeleteModal) return;
+
+                const updatedSuppliers = fornecedores.filter(f => f.id !== showDeleteModal.id);
+                setFornecedores(updatedSuppliers);
+                
+                // Remover do banco de dados
+                if (window.db && window.db.deleteFornecedor) {
+                    await window.db.deleteFornecedor(showDeleteModal.id);
+                }
+                
+                setShowDeleteModal(null);
+                alert('Fornecedor removido com sucesso!');
+            };
+
+            // Handler para exportar dados
+            const handleExportSuppliers = () => {
+                const csv = fornecedores.map(supplier => ({
+                    ID: supplier.id,
+                    Nome: supplier.nome,
+                    Descrição: supplier.descricao,
+                    Categoria: supplier.categoria,
+                    Tipo: supplier.tipo,
+                    'Preço Médio': `R$ ${supplier.precoMedio.toFixed(2)}`,
+                    Link: supplier.link,
+                    'Nome Fornecedor': supplier.fornecedorNome,
+                    Contato: supplier.fornecedorContato,
+                    Email: supplier.fornecedorEmail,
+                    Telefone: supplier.fornecedorTelefone,
+                    Avaliação: supplier.rating,
+                    Status: supplier.status,
+                    'Lead Time': supplier.leadTime,
+                    'Unidade Medida': supplier.unidadeMedida,
+                    'Estoque Mínimo': supplier.estoqueMinimo,
+                    'Estoque Atual': supplier.estoqueAtual,
+                    'Última Compra': supplier.ultimaCompra,
+                    'Próxima Entrega': supplier.proximaEntrega,
+                    Notas: supplier.notas
+                }));
+
+                const csvContent = Object.keys(csv[0]).join(';') + '\n' +
+                    csv.map(row => Object.values(row).join(';')).join('\n');
+                
+                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `fornecedores_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+                URL.revokeObjectURL(link.href);
+                
+                alert('Fornecedores exportados com sucesso!');
+            };
+
+            // Navigation items
+            const navigationItems = [
+                { name: 'Dashboard', icon: '🏠', url: 'index.html' },
+                { name: 'Coleta', icon: '📋', url: 'coleta.html' },
+                { name: 'Ordens', icon: '📦', url: 'ordem.html' },
+                { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
+                { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
+                { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
+                { name: 'Receitas', icon: '🧑‍🍳', url: 'Receitas.html' }
+            ];
+
+            // Toggle dark mode
+            const toggleDark = () => {
+                setDark(prev => !prev);
+            };
+
+            return (
+                <div className={`h-screen smooth-transition ${dark ? 'dark bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-gray-50 to-gray-100 text-gray-900'}`}>
+                    <div className="flex h-full">
+                        {/* Sidebar */}
+                        <aside className={`flex flex-col smooth-transition ${sidebarOpen ? 'w-64' : 'w-16'} ${dark ? 'bg-gray-800 border-gray-700' : 'bg-white shadow-lg'} border-r`}>
+                            <div className="p-4 flex items-center justify-between border-b dark:border-gray-700">
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg w-10 h-10 flex items-center justify-center font-bold bg-gradient-to-br from-green-400 to-green-600 text-white shadow-lg">DV</div>
+                                    {sidebarOpen && (
+                                        <div className="animate-fade-in">
+                                            <div className="text-lg font-semibold">Diviníssimo</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">Fornecedores</div>
+                                        </div>
+                                    )}
+                                </div>
+                                <button className={`p-2 rounded-lg smooth-transition ${dark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`} onClick={() => setSidebarOpen(s => !s)}>
+                                    {sidebarOpen ? '⟨' : '⟩'}
+                                </button>
+                            </div>
+
+                            <nav className="flex-1 px-2 py-4 space-y-1">
+                                {navigationItems.map((item, idx) => (
+                                    <button 
+                                        key={item.name} 
+                                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg smooth-transition ${
+                                            item.name === 'Fornecedores' 
+                                                ? (dark ? 'bg-gray-700 text-green-400' : 'bg-green-50 text-green-600') 
+                                                : (dark ? 'hover:bg-gray-700' : 'hover:bg-gray-100')
+                                        }`}
+                                        onClick={() => {
+                                            if (item.url) window.location.href = item.url;
+                                        }}
+                                    >
+                                        <span className="w-8 text-center text-xl">{item.icon}</span>
+                                        {sidebarOpen && <span className="truncate">{item.name}</span>}
+                                    </button>
+                                ))}
+                            </nav>
+
+                            <div className="p-4 border-t dark:border-gray-700">
+                                {sidebarOpen && (
+                                    <>
+                                        <div className="mt-4 flex items-center justify-between text-xs">
+                                            <div className="text-gray-500 dark:text-gray-400">Modo</div>
+                                            <button className={`px-3 py-1.5 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`} onClick={toggleDark}>
+                                                {dark ? '☀️ Light' : '🌙 Dark'}
+                                            </button>
+                                        </div>
+                                        <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                                            {isOnline ? '✅ Online' : '⚠️ Offline'}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </aside>
+
+                        {/* Main Content */}
+                        <main className="flex-1 p-6 overflow-auto">
+                            {/* Header */}
+                            <header className="flex items-center justify-between mb-6 animate-fade-in">
+                                <div className="flex items-center gap-4">
+                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-400 bg-clip-text text-transparent">Gestão de Fornecedores</h1>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">{selectedLine}</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className={`flex items-center text-sm px-4 py-2 rounded-full smooth-transition ${isOnline ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
+                                        <span className={`w-2 h-2 rounded-full mr-2 ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                                        {isOnline ? 'Online' : 'Offline'}
+                                    </div>
+                                    <button 
+                                        className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
+                                        onClick={() => setShowNewSupplierModal(true)}
+                                    >
+                                        + Novo Fornecedor
+                                    </button>
+                                    <button 
+                                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
+                                        onClick={handleExportSuppliers}
+                                    >
+                                        📊 Exportar
+                                    </button>
+                                </div>
+                            </header>
+
+                            {/* Stats */}
+                            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                                <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Total de Fornecedores</div>
+                                    <div className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.total}</div>
+                                    <div className="text-xs text-gray-400 mt-2">
+                                        {stats.disponiveis} disponíveis • {stats.baixoEstoque} baixo estoque
+                                    </div>
+                                </div>
+
+                                <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Ingredientes</div>
+                                    <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.ingredientes}</div>
+                                    <div className="text-xs text-gray-400 mt-2">Farinhas, queijos, ovos, etc.</div>
+                                </div>
+
+                                <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Tecnologias</div>
+                                    <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.tecnologias}</div>
+                                    <div className="text-xs text-gray-400 mt-2">Sensores, software, automação</div>
+                                </div>
+
+                                <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Valor em Estoque</div>
+                                    <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">R$ {stats.valorTotalEstoque}</div>
+                                    <div className="text-xs text-gray-400 mt-2">Valor total estimado</div>
+                                </div>
+                            </section>
+
+                            {/* Filtros */}
+                            <section className={`p-5 rounded-xl shadow-md mb-6 animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                <h3 className="font-semibold mb-4 text-lg">Filtros e Ordenação</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Categoria</label>
+                                        <select value={categoriaFilter} onChange={(e) => setCategoriaFilter(e.target.value)} className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}>
+                                            <option>Todos</option>
+                                            {categorias.map(cat => (
+                                                <option key={cat.id} value={cat.nome}>{cat.nome}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Ordenar por</label>
+                                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-300'}`}>
+                                            <option value="nome">Nome A-Z</option>
+                                            <option value="preco">Preço (maior primeiro)</option>
+                                            <option value="rating">Avaliação</option>
+                                            <option value="ultimaCompra">Última Compra</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Buscar</label>
+                                        <input type="text" placeholder="Nome, descrição ou fornecedor" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500' : 'bg-white border-gray-300 placeholder-gray-400'}`} />
+                                    </div>
+                                </div>
+                            </section>
+
+                            {/* Lista de Fornecedores */}
+                            <section className="space-y-4">
+                                {filteredFornecedores.map((fornecedor, idx) => (
+                                    <div key={fornecedor.id} className={`p-5 rounded-xl shadow-md card-hover animate-slide-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`} style={{ animationDelay: `${idx * 0.05}s` }}>
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="text-xl font-semibold">{fornecedor.nome}</div>
+                                                    <CategoryBadge category={fornecedor.categoria} />
+                                                    <AvailabilityBadge status={fornecedor.status} />
+                                                    <RatingStars rating={fornecedor.rating} />
+                                                </div>
+                                                <div className="text-lg text-gray-700 dark:text-gray-300 mb-2">{fornecedor.descricao}</div>
+                                                <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                                                    <div>🏭 {fornecedor.fornecedorNome}</div>
+                                                    <div>📞 {fornecedor.fornecedorContato}</div>
+                                                    <div>💰 R$ {fornecedor.precoMedio.toFixed(2)} / {fornecedor.unidadeMedida}</div>
+                                                    <div>📦 Estoque: {fornecedor.estoqueAtual} (mín: {fornecedor.estoqueMinimo})</div>
+                                                    {fornecedor.link && (
+                                                        <div>
+                                                            <a href={fornecedor.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                                                                🔗 Ver produto
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className={`text-4xl ${ fornecedor.categoria === 'Ingrediente' ? '🍞' : fornecedor.categoria === 'Tecnologia' ? '🤖' : fornecedor.categoria === 'Equipamento' ? '⚙️' : '📦' }`}></div>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            <button 
+                                                className={`flex-1 py-2 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                                                onClick={() => setShowDetailsModal(fornecedor)}
+                                            >
+                                                Ver Detalhes
+                                            </button>
+                                            <button 
+                                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 text-white smooth-transition hover:shadow-lg hover:scale-105"
+                                                onClick={() => setShowEditModal(fornecedor)}
+                                            >
+                                                ✏️ Editar
+                                            </button>
+                                            <button 
+                                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-red-600 to-red-500 text-white smooth-transition hover:shadow-lg hover:scale-105"
+                                                onClick={() => setShowDeleteModal(fornecedor)}
+                                            >
+                                                🗑️ Excluir
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {filteredFornecedores.length === 0 && (
+                                    <div className={`p-12 rounded-xl text-center ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                        <div className="text-6xl mb-4">🏭</div>
+                                        <div className="text-xl font-semibold mb-2">Nenhum fornecedor encontrado</div>
+                                        <div className="text-gray-500 dark:text-gray-400">Tente ajustar os filtros ou cadastre um novo fornecedor.</div>
+                                        <button 
+                                            className="mt-4 px-6 py-3 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition"
+                                            onClick={() => setShowNewSupplierModal(true)}
+                                        >
+                                            + Cadastrar Primeiro Fornecedor
+                                        </button>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* Resumo */}
+                            {filteredFornecedores.length > 0 && (
+                                <div className={`mt-6 p-5 rounded-xl shadow-md ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                                        Mostrando {filteredFornecedores.length} de {fornecedores.length} fornecedores • 
+                                        Valor total em estoque: <span className="font-semibold text-green-600 dark:text-green-400">R$ {stats.valorTotalEstoque}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+
+                    {/* Modal Novo Fornecedor */}
+                    <Modal isOpen={showNewSupplierModal} onClose={() => setShowNewSupplierModal(false)} title="Cadastrar Novo Fornecedor/Produto">
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Nome do Produto *</label>
+                                    <input
+                                        type="text"
+                                        value={newSupplier.nome}
+                                        onChange={(e) => setNewSupplier({...newSupplier, nome: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="Ex: Farinha de Trigo Especial"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Categoria *</label>
+                                    <select
+                                        value={newSupplier.categoria}
+                                        onChange={(e) => {
+                                            const categoria = e.target.value;
+                                            setNewSupplier({
+                                                ...newSupplier, 
+                                                categoria,
+                                                tipo: '' // Resetar tipo ao mudar categoria
+                                            });
+                                        }}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        {categorias.map(cat => (
+                                            <option key={cat.id} value={cat.nome}>{cat.nome}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Tipo/Subcategoria</label>
+                                    <select
+                                        value={newSupplier.tipo}
+                                        onChange={(e) => setNewSupplier({...newSupplier, tipo: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {categorias
+                                            .find(c => c.nome === newSupplier.categoria)
+                                            ?.subcategorias.map(sub => (
+                                                <option key={sub} value={sub}>{sub}</option>
+                                            ))}
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Preço Médio (R$)</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={newSupplier.precoMedio}
+                                        onChange={(e) => setNewSupplier({...newSupplier, precoMedio: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Link do Produto</label>
+                                    <input
+                                        type="url"
+                                        value={newSupplier.link}
+                                        onChange={(e) => setNewSupplier({...newSupplier, link: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="https://www.exemplo.com/produto"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Unidade de Medida</label>
+                                    <select
+                                        value={newSupplier.unidadeMedida}
+                                        onChange={(e) => setNewSupplier({...newSupplier, unidadeMedida: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        {unidadesMedida.map(uni => (
+                                            <option key={uni.value} value={uni.value}>{uni.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium mb-2">Descrição</label>
+                                <textarea
+                                    rows={2}
+                                    value={newSupplier.descricao}
+                                    onChange={(e) => setNewSupplier({...newSupplier, descricao: e.target.value})}
+                                    className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    placeholder="Descreva o produto ou serviço..."
+                                />
+                            </div>
+                            
+                            <div className="border-t pt-4">
+                                <h4 className="font-semibold mb-3 text-lg">Informações do Fornecedor</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Nome do Fornecedor</label>
+                                        <input
+                                            type="text"
+                                            value={newSupplier.fornecedorNome}
+                                            onChange={(e) => setNewSupplier({...newSupplier, fornecedorNome: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                            placeholder="Ex: Empresa Ltda."
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Pessoa de Contato</label>
+                                        <input
+                                            type="text"
+                                            value={newSupplier.fornecedorContato}
+                                            onChange={(e) => setNewSupplier({...newSupplier, fornecedorContato: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                            placeholder="Ex: João Silva"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Email</label>
+                                        <input
+                                            type="email"
+                                            value={newSupplier.fornecedorEmail}
+                                            onChange={(e) => setNewSupplier({...newSupplier, fornecedorEmail: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                            placeholder="contato@empresa.com"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Telefone</label>
+                                        <input
+                                            type="tel"
+                                            value={newSupplier.fornecedorTelefone}
+                                            onChange={(e) => setNewSupplier({...newSupplier, fornecedorTelefone: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                            placeholder="(11) 99999-9999"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Avaliação (1-5)</label>
+                                    <select
+                                        value={newSupplier.rating}
+                                        onChange={(e) => setNewSupplier({...newSupplier, rating: parseInt(e.target.value)})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        {[1, 2, 3, 4, 5].map(r => (
+                                            <option key={r} value={r}>{r} ★</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Status</label>
+                                    <select
+                                        value={newSupplier.status}
+                                        onChange={(e) => setNewSupplier({...newSupplier, status: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        <option value="Disponível">Disponível</option>
+                                        <option value="Baixo Estoque">Baixo Estoque</option>
+                                        <option value="Indisponível">Indisponível</option>
+                                        <option value="Sob Encomenda">Sob Encomenda</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Lead Time (entrega)</label>
+                                    <input
+                                        type="text"
+                                        value={newSupplier.leadTime}
+                                        onChange={(e) => setNewSupplier({...newSupplier, leadTime: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="Ex: 24h, 3 dias"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Estoque Mínimo</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={newSupplier.estoqueMinimo}
+                                        onChange={(e) => setNewSupplier({...newSupplier, estoqueMinimo: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="0"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Estoque Atual</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={newSupplier.estoqueAtual}
+                                        onChange={(e) => setNewSupplier({...newSupplier, estoqueAtual: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        placeholder="0"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Próxima Entrega</label>
+                                    <input
+                                        type="date"
+                                        value={newSupplier.proximaEntrega}
+                                        onChange={(e) => setNewSupplier({...newSupplier, proximaEntrega: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium mb-2">Notas Adicionais</label>
+                                <textarea
+                                    rows={3}
+                                    value={newSupplier.notas}
+                                    onChange={(e) => setNewSupplier({...newSupplier, notas: e.target.value})}
+                                    className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    placeholder="Observações importantes sobre o produto ou fornecedor..."
+                                />
+                            </div>
+                            
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => setShowNewSupplierModal(false)}
+                                    className={`flex-1 py-2 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSaveNewSupplier}
+                                    className="flex-1 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 text-white hover:shadow-lg smooth-transition"
+                                >
+                                    Salvar Fornecedor
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+
+                    {/* Modal Detalhes */}
+                    <Modal isOpen={!!showDetailsModal} onClose={() => setShowDetailsModal(null)} title={`Detalhes - ${showDetailsModal?.nome}`}>
+                        {showDetailsModal && (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">ID</div>
+                                        <div className="font-semibold">{showDetailsModal.id}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">Categoria</div>
+                                        <div className="font-semibold"><CategoryBadge category={showDetailsModal.categoria} /></div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">Tipo</div>
+                                        <div className="font-semibold">{showDetailsModal.tipo}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">Status</div>
+                                        <div className="font-semibold"><AvailabilityBadge status={showDetailsModal.status} /></div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">Preço Médio</div>
+                                        <div className="font-semibold">R$ {showDetailsModal.precoMedio.toFixed(2)} / {showDetailsModal.unidadeMedida}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">Avaliação</div>
+                                        <div className="font-semibold"><RatingStars rating={showDetailsModal.rating} /></div>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Descrição</div>
+                                    <div className={`p-3 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                        {showDetailsModal.descricao}
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Informações do Fornecedor</div>
+                                    <div className={`p-3 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <div><span className="font-medium">Empresa:</span> {showDetailsModal.fornecedorNome}</div>
+                                            <div><span className="font-medium">Contato:</span> {showDetailsModal.fornecedorContato}</div>
+                                            <div><span className="font-medium">Email:</span> {showDetailsModal.fornecedorEmail}</div>
+                                            <div><span className="font-medium">Telefone:</span> {showDetailsModal.fornecedorTelefone}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Informações de Estoque</div>
+                                        <div className={`p-3 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                            <div><span className="font-medium">Estoque Atual:</span> {showDetailsModal.estoqueAtual} {showDetailsModal.unidadeMedida}</div>
+                                            <div><span className="font-medium">Estoque Mínimo:</span> {showDetailsModal.estoqueMinimo} {showDetailsModal.unidadeMedida}</div>
+                                            <div><span className="font-medium">Última Compra:</span> {showDetailsModal.ultimaCompra}</div>
+                                            <div><span className="font-medium">Próxima Entrega:</span> {showDetailsModal.proximaEntrega || 'Não agendada'}</div>
+                                            <div><span className="font-medium">Lead Time:</span> {showDetailsModal.leadTime}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Valorização</div>
+                                        <div className={`p-3 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                            <div><span className="font-medium">Valor em Estoque:</span> R$ {(showDetailsModal.precoMedio * (showDetailsModal.estoqueAtual || 0)).toFixed(2)}</div>
+                                            <div><span className="font-medium">Criado em:</span> {showDetailsModal.createdAt}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {showDetailsModal.link && (
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Link do Produto</div>
+                                        <a 
+                                            href={showDetailsModal.link} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 smooth-transition"
+                                        >
+                                            🔗 Acessar Página do Produto
+                                        </a>
+                                    </div>
+                                )}
+                                
+                                {showDetailsModal.notas && (
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Notas</div>
+                                        <div className={`p-3 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                            {showDetailsModal.notas}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </Modal>
+
+                    {/* Modal Editar (similar ao de cadastro) */}
+                    <Modal isOpen={!!showEditModal} onClose={() => setShowEditModal(null)} title={`Editar - ${showEditModal?.nome}`}>
+                        {showEditModal && (
+                            <div className="space-y-4">
+                                {/* Formulário de edição (similar ao de cadastro) */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Nome do Produto *</label>
+                                        <input
+                                            type="text"
+                                            value={showEditModal.nome}
+                                            onChange={(e) => setShowEditModal({...showEditModal, nome: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                            required
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Categoria</label>
+                                        <select
+                                            value={showEditModal.categoria}
+                                            onChange={(e) => setShowEditModal({...showEditModal, categoria: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        >
+                                            {categorias.map(cat => (
+                                                <option key={cat.id} value={cat.nome}>{cat.nome}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Preço Médio (R$)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={showEditModal.precoMedio}
+                                            onChange={(e) => setShowEditModal({...showEditModal, precoMedio: parseFloat(e.target.value)})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2">Link do Produto</label>
+                                        <input
+                                            type="url"
+                                            value={showEditModal.link}
+                                            onChange={(e) => setShowEditModal({...showEditModal, link: e.target.value})}
+                                            className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                        />
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Status</label>
+                                    <select
+                                        value={showEditModal.status}
+                                        onChange={(e) => setShowEditModal({...showEditModal, status: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    >
+                                        <option value="Disponível">Disponível</option>
+                                        <option value="Baixo Estoque">Baixo Estoque</option>
+                                        <option value="Indisponível">Indisponível</option>
+                                        <option value="Sob Encomenda">Sob Encomenda</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Estoque Atual</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={showEditModal.estoqueAtual}
+                                        onChange={(e) => setShowEditModal({...showEditModal, estoqueAtual: parseInt(e.target.value)})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Notas</label>
+                                    <textarea
+                                        rows={3}
+                                        value={showEditModal.notas}
+                                        onChange={(e) => setShowEditModal({...showEditModal, notas: e.target.value})}
+                                        className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+                                    />
+                                </div>
+                                
+                                <div className="flex gap-3 pt-4">
+                                    <button
+                                        onClick={() => setShowEditModal(null)}
+                                        className={`flex-1 py-2 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleUpdateSupplier}
+                                        className="flex-1 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 text-white hover:shadow-lg smooth-transition"
+                                    >
+                                        Salvar Alterações
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+
+                    {/* Modal Confirmar Exclusão */}
+                    <Modal isOpen={!!showDeleteModal} onClose={() => setShowDeleteModal(null)} title="Confirmar Exclusão">
+                        <div className="space-y-4">
+                            <div className={`p-4 rounded-lg ${dark ? 'bg-red-900/20 border border-red-700' : 'bg-red-50 border border-red-200'}`}>
+                                <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                                    <span>⚠️</span>
+                                    <span className="font-medium">Atenção: Esta ação é irreversível</span>
+                                </div>
+                                <p className="text-sm text-red-700 dark:text-red-300 mt-2">
+                                    Tem certeza que deseja excluir o fornecedor <strong>{showDeleteModal?.nome}</strong>?
+                                    Todos os dados relacionados serão permanentemente removidos.
+                                </p>
+                            </div>
+                            
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    onClick={() => setShowDeleteModal(null)}
+                                    className={`flex-1 py-2 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleDeleteSupplier}
+                                    className="flex-1 py-2 rounded-lg bg-gradient-to-r from-red-600 to-red-500 text-white hover:shadow-lg smooth-transition"
+                                >
+                                    Confirmar Exclusão
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+                </div>
+            );
+        }
+
+        // Renderizar a aplicação
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
