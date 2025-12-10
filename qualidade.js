@@ -680,7 +680,7 @@ function App() {
     { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
     { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
     { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
-    { name: 'Receitas', icon: '🧑‍🍳', url: 'Receitas.html' }
+    { name: 'Receitas', icon: '🧑‍🍳', url: 'receitas.html' }
   ];
 
   return (
@@ -1028,4 +1028,5 @@ function App() {
 // Renderizar na página
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
+
 root.render(<App />);
