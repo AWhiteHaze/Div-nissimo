@@ -1,18 +1,23 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 
 /* Componentes auxiliares */
-function SummaryCard({ label, value, color = 'green', dark }) {
+function SummaryCard({ label, value, color = 'green', dark, icon = '📊', subtitle = '' }) {
   const colorClass = color === 'blue'
     ? 'text-blue-600 dark:text-blue-400'
+    : color === 'red'
+    ? 'text-red-600 dark:text-red-400'
     : color === 'gray'
     ? 'text-gray-600 dark:text-gray-400'
     : 'text-green-600 dark:text-green-400';
 
   return (
     <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
-      <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">{label}</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm text-gray-500 dark:text-gray-400">{label}</div>
+        <span className="text-xl">{icon}</span>
+      </div>
       <div className={`text-3xl font-bold ${colorClass}`}>{value}</div>
-      <div className="text-xs text-gray-400 mt-2">Período atual</div>
+      {subtitle && <div className="text-xs text-gray-400 mt-2">{subtitle}</div>}
     </div>
   );
 }
@@ -65,96 +70,135 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-function OrderCard({ ordem, idx, dark, getStatusColor, getPriorityColor, onPauseResume, onStart, onViewDetails, onExport }) {
+// Componente para badge de status
+const StatusBadge = ({ status }) => {
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Em Produção': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      case 'Concluída': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      case 'Aguardando': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+      case 'Cancelada': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      case 'Pausada': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+    }
+  };
+  
   return (
-    <div
-      className={`p-5 rounded-xl shadow-md card-hover animate-slide-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}
-      style={{ animationDelay: `${idx * 0.05}s` }}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="text-xl font-semibold">{ordem.id}</div>
-            <div className={`px-3 py-1 rounded-full text-xs font-medium smooth-transition ${getStatusColor(ordem.status)}`}>
-              {ordem.status}
-            </div>
-            <div className={`text-sm font-medium ${getPriorityColor(ordem.priority)}`}>
-              ⚡ {ordem.priority}
-            </div>
-            {ordem.paused && (
-              <div className="px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                ⏸️ PAUSADA
-              </div>
-            )}
+    <span className={`px-3 py-1 rounded-full text-xs font-medium smooth-transition ${getStatusColor(status)}`}>
+      {status}
+    </span>
+  );
+};
+
+// Componente para badge de prioridade
+const PriorityBadge = ({ priority }) => {
+  const getPriorityColor = (priority) => {
+    switch(priority) {
+      case 'Alta': return 'text-red-600 dark:text-red-400';
+      case 'Normal': return 'text-blue-600 dark:text-blue-400';
+      case 'Baixa': return 'text-gray-600 dark:text-gray-400';
+      default: return 'text-gray-600';
+    }
+  };
+  
+  return (
+    <span className={`text-sm font-medium ${getPriorityColor(priority)}`}>
+      ⚡ {priority}
+    </span>
+  );
+};
+
+// Componente de linha da tabela de ordens
+function OrderRow({ ordem, dark, onViewDetails, onPauseResume, onStart, onExport, onDelete, onUpdateStatus }) {
+  const getProgressColor = (progress) => {
+    if (progress === 100) return 'bg-gradient-to-r from-green-500 to-green-400';
+    if (ordem.paused) return 'bg-gradient-to-r from-yellow-500 to-yellow-400';
+    return 'bg-gradient-to-r from-blue-500 to-blue-400';
+  };
+
+  return (
+    <tr className={`smooth-transition ${dark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} border-b dark:border-gray-700`}>
+      <td className="p-4">
+        <div className="font-semibold">{ordem.id}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ordem.product}</div>
+      </td>
+      <td className="p-4">
+        <StatusBadge status={ordem.status} />
+      </td>
+      <td className="p-4">
+        <PriorityBadge priority={ordem.priority} />
+      </td>
+      <td className="p-4">
+        <div className="text-sm">{ordem.quantity} un.</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">Total</div>
+      </td>
+      <td className="p-4">
+        <div className="text-sm font-medium text-green-600 dark:text-green-400">{ordem.produced} un.</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">Produzido</div>
+      </td>
+      <td className="p-4">
+        <div className="flex items-center gap-2">
+          <div className="w-24 bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+            <div
+              className={`h-2 rounded-full smooth-transition ${getProgressColor(ordem.progress)}`}
+              style={{ width: `${ordem.progress}%` }}
+            ></div>
           </div>
-          <div className="text-lg text-gray-700 dark:text-gray-300 mb-1">{ordem.product}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Início: {ordem.startDate} • Prazo: {ordem.deadline}
-          </div>
+          <span className="text-sm font-medium">{ordem.progress}%</span>
         </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">{ordem.produced}</div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">de {ordem.quantity} un.</div>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <div className="flex justify-between text-sm mb-2">
-          <span className="text-gray-500 dark:text-gray-400">Progresso</span>
-          <span className="font-medium">{ordem.progress}%</span>
-        </div>
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-          <div
-            className={`h-3 rounded-full smooth-transition ${
-              ordem.progress === 100 
-                ? 'bg-gradient-to-r from-green-500 to-green-400'
-                : ordem.paused 
-                ? 'bg-gradient-to-r from-yellow-500 to-yellow-400'
-                : 'bg-gradient-to-r from-blue-500 to-blue-400'
-            }`}
-            style={{ width: `${ordem.progress}%` }}
-          ></div>
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          className={`flex-1 py-2 rounded-lg border smooth-transition ${dark ? 'border-gray-600 hover:bg-gray-700' : 'border-gray-300 hover:bg-gray-50'}`}
-          onClick={() => onViewDetails(ordem)}
-        >
-          Ver Detalhes
-        </button>
-
-        {ordem.status === 'Em Produção' && (
+      </td>
+      <td className="p-4">
+        <div className="text-sm">{ordem.operator}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">{ordem.machine}</div>
+      </td>
+      <td className="p-4">
+        <div className="flex gap-1">
           <button
-            className={`flex-1 py-2 rounded-lg smooth-transition ${
-              ordem.paused 
-                ? 'bg-gradient-to-r from-green-600 to-green-500' 
-                : 'bg-gradient-to-r from-amber-600 to-amber-500'
-            } text-white hover:shadow-lg hover:scale-105`}
-            onClick={() => onPauseResume(ordem.id)}
+            onClick={() => onViewDetails(ordem)}
+            className="p-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 smooth-transition"
+            title="Ver detalhes"
           >
-            {ordem.paused ? '▶ Retomar' : '⏸ Pausar'}
+            👁️
           </button>
-        )}
+          
+          {ordem.status === 'Em Produção' && (
+            <button
+              onClick={() => onPauseResume(ordem.id)}
+              className="p-1.5 rounded-lg bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900 dark:text-yellow-300 dark:hover:bg-yellow-800 smooth-transition"
+              title={ordem.paused ? 'Retomar produção' : 'Pausar produção'}
+            >
+              {ordem.paused ? '▶' : '⏸'}
+            </button>
+          )}
 
-        {ordem.status === 'Aguardando' && (
+          {ordem.status === 'Aguardando' && (
+            <button
+              onClick={() => onStart(ordem.id)}
+              className="p-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800 smooth-transition"
+              title="Iniciar produção"
+            >
+              ▶
+            </button>
+          )}
+
           <button
-            className="flex-1 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 text-white smooth-transition hover:shadow-lg hover:scale-105"
-            onClick={() => onStart(ordem.id)}
+            onClick={() => onExport(ordem)}
+            className="p-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800 smooth-transition"
+            title="Exportar ordem"
           >
-            ▶ Iniciar
+            📥
           </button>
-        )}
 
-        <button
-          className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 text-white smooth-transition hover:shadow-lg hover:scale-105"
-          onClick={() => onExport(ordem)}
-        >
-          📥 Exportar
-        </button>
-      </div>
-    </div>
+          <button
+            onClick={() => onDelete(ordem.id)}
+            className="p-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800 smooth-transition"
+            title="Excluir ordem"
+          >
+            🗑️
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -165,6 +209,7 @@ function App() {
   const [dark, setDark] = useState(false);
   const [dbReady, setDbReady] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [priorityFilter, setPriorityFilter] = useState("Todos");
@@ -172,83 +217,18 @@ function App() {
 
   const [showDetailsModal, setShowDetailsModal] = useState(null);
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
-  const [ordens, setOrdens] = useState([
-    { 
-      id: 'OP-2025-089', 
-      product: 'Pão de Queijo Tradicional', 
-      quantity: 2000, 
-      produced: 1450, 
-      status: 'Em Produção', 
-      priority: 'Alta', 
-      startDate: '06/10/2025 08:00', 
-      deadline: '06/10/2025 18:00', 
-      progress: 72, 
-      operator: 'João Silva', 
-      machine: 'Máquina 01', 
-      paused: false 
-    },
-    { 
-      id: 'OP-2025-088', 
-      product: 'Pão de Queijo Integral', 
-      quantity: 1500, 
-      produced: 1500, 
-      status: 'Concluída', 
-      priority: 'Normal', 
-      startDate: '05/10/2025 14:00', 
-      deadline: '06/10/2025 08:00', 
-      progress: 100, 
-      operator: 'Maria Santos', 
-      machine: 'Máquina 02' 
-    },
-    { 
-      id: 'OP-2025-087', 
-      product: 'Pão de Queijo Orgânico', 
-      quantity: 1000, 
-      produced: 0, 
-      status: 'Aguardando', 
-      priority: 'Baixa', 
-      startDate: '07/10/2025 08:00', 
-      deadline: '07/10/2025 16:00', 
-      progress: 0, 
-      operator: 'Carlos Oliveira', 
-      machine: 'Máquina 01' 
-    },
-    { 
-      id: 'OP-2025-086', 
-      product: 'Pão de Queijo Tradicional', 
-      quantity: 2500, 
-      produced: 2500, 
-      status: 'Concluída', 
-      priority: 'Alta', 
-      startDate: '05/10/2025 08:00', 
-      deadline: '05/10/2025 18:00', 
-      progress: 100, 
-      operator: 'Ana Paula', 
-      machine: 'Máquina 03' 
-    },
-    { 
-      id: 'OP-2025-085', 
-      product: 'Pão de Queijo Recheado', 
-      quantity: 1800, 
-      produced: 920, 
-      status: 'Em Produção', 
-      priority: 'Normal', 
-      startDate: '06/10/2025 10:00', 
-      deadline: '06/10/2025 20:00', 
-      progress: 51, 
-      operator: 'Roberto Costa', 
-      machine: 'Máquina 02', 
-      paused: false 
-    },
-  ]);
-
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [showUpdateStatusModal, setShowUpdateStatusModal] = useState(null);
+  
+  const [ordens, setOrdens] = useState([]);
   const [newOrder, setNewOrder] = useState({
     product: '',
     quantity: '',
     priority: 'Normal',
     deadline: '',
     operator: '',
-    machine: 'Máquina 01'
+    machine: 'Máquina 01',
+    status: 'Aguardando'
   });
 
   // Inicializar banco de dados e tema
@@ -275,10 +255,7 @@ function App() {
           });
           
           // Carregar ordens do banco de dados
-          const savedOrdens = await window.db.getOrdens();
-          if (savedOrdens && savedOrdens.length > 0) {
-            setOrdens(savedOrdens);
-          }
+          await loadOrdens();
           
           setDbReady(true);
           
@@ -293,6 +270,64 @@ function App() {
     };
     
     initDB();
+  }, []);
+
+  // Carregar ordens do banco de dados
+  const loadOrdens = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      if (window.db) {
+        const ordensFromDB = await window.db.getOrdens();
+        // Ordenar por ID decrescente (mais recentes primeiro)
+        ordensFromDB.sort((a, b) => {
+          const idA = parseInt(a.id.split('-')[2]) || 0;
+          const idB = parseInt(b.id.split('-')[2]) || 0;
+          return idB - idA;
+        });
+        setOrdens(ordensFromDB);
+        
+        // Notificar dashboard sobre atualização
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', { count: ordensFromDB.length });
+        }
+      } else {
+        // Dados de exemplo se o banco não estiver disponível
+        const exemploOrdens = [
+          { 
+            id: 'OP-2025-089', 
+            product: 'Pão de Queijo Tradicional', 
+            quantity: 2000, 
+            produced: 1450, 
+            status: 'Em Produção', 
+            priority: 'Alta', 
+            startDate: '06/10/2025 08:00', 
+            deadline: '06/10/2025 18:00', 
+            progress: 72, 
+            operator: 'João Silva', 
+            machine: 'Máquina 01', 
+            paused: false 
+          },
+          { 
+            id: 'OP-2025-088', 
+            product: 'Pão de Queijo Integral', 
+            quantity: 1500, 
+            produced: 1500, 
+            status: 'Concluída', 
+            priority: 'Normal', 
+            startDate: '05/10/2025 14:00', 
+            deadline: '06/10/2025 08:00', 
+            progress: 100, 
+            operator: 'Maria Santos', 
+            machine: 'Máquina 02' 
+          },
+        ];
+        setOrdens(exemploOrdens);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar ordens:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   // Salvar configurações quando mudarem
@@ -344,6 +379,7 @@ function App() {
     setDark(prev => !prev);
   };
 
+  // Monitorar status online/offline
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -357,75 +393,212 @@ function App() {
 
   // Simula progresso automático das ordens em produção
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       setOrdens(prev => prev.map(ordem => {
         if (ordem.status === 'Em Produção' && !ordem.paused && ordem.progress < 100) {
-          const newProduced = Math.min(ordem.quantity, ordem.produced + Math.floor(Math.random() * 15 + 5));
-          const newProgress = Math.round((newProduced / ordem.quantity) * 100);
+          const increment = Math.floor(Math.random() * 3 + 1); // 1-3% de incremento
+          const newProgress = Math.min(100, ordem.progress + increment);
+          const newProduced = Math.round((newProgress / 100) * ordem.quantity);
           
           // Se completou, muda status
           if (newProgress >= 100) {
-            return { ...ordem, produced: ordem.quantity, progress: 100, status: 'Concluída' };
+            const updatedOrdem = { 
+              ...ordem, 
+              produced: ordem.quantity, 
+              progress: 100, 
+              status: 'Concluída',
+              paused: false 
+            };
+            
+            // Salvar no banco
+            if (window.db) {
+              window.db.saveOrdem(updatedOrdem);
+            }
+            
+            return updatedOrdem;
           }
           
-          return { ...ordem, produced: newProduced, progress: newProgress };
+          const updatedOrdem = { ...ordem, produced: newProduced, progress: newProgress };
+          
+          // Salvar no banco
+          if (window.db) {
+            window.db.saveOrdem(updatedOrdem);
+          }
+          
+          return updatedOrdem;
         }
         return ordem;
       }));
-    }, 8000); // Atualiza a cada 8 segundos
+    }, 10000); // Atualiza a cada 10 segundos
     
     return () => clearInterval(interval);
   }, []);
 
+  // Filtrar ordens
   const filteredOrdens = useMemo(() => {
     return ordens.filter(o => {
       if (statusFilter !== "Todos" && o.status !== statusFilter) return false;
       if (priorityFilter !== "Todos" && o.priority !== priorityFilter) return false;
-      if (searchTerm && !o.id.toLowerCase().includes(searchTerm.toLowerCase()) && !o.product.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (searchTerm && 
+          !o.id.toLowerCase().includes(searchTerm.toLowerCase()) && 
+          !o.product.toLowerCase().includes(searchTerm.toLowerCase()) &&
+          !o.operator.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       return true;
     });
   }, [ordens, statusFilter, priorityFilter, searchTerm]);
 
-  const stats = useMemo(() => ({
-    total: filteredOrdens.length,
-    emProducao: filteredOrdens.filter(o => o.status === 'Em Produção').length,
-    concluidas: filteredOrdens.filter(o => o.status === 'Concluída').length,
-    aguardando: filteredOrdens.filter(o => o.status === 'Aguardando').length,
-  }), [filteredOrdens]);
-
-  const handlePauseResume = useCallback((ordemId) => {
-    setOrdens(prev => prev.map(o => {
-      if (o.id === ordemId && o.status === 'Em Produção') {
-        return { ...o, paused: !o.paused };
+  // Estatísticas
+  const stats = useMemo(() => {
+    const total = filteredOrdens.length;
+    const emProducao = filteredOrdens.filter(o => o.status === 'Em Produção').length;
+    const concluidas = filteredOrdens.filter(o => o.status === 'Concluída').length;
+    const aguardando = filteredOrdens.filter(o => o.status === 'Aguardando').length;
+    const pausadas = filteredOrdens.filter(o => o.paused).length;
+    const totalProduzido = filteredOrdens.reduce((sum, o) => sum + o.produced, 0);
+    const totalQuantidade = filteredOrdens.reduce((sum, o) => sum + o.quantity, 0);
+    const progressoMedio = total > 0 
+      ? (filteredOrdens.reduce((sum, o) => sum + o.progress, 0) / total).toFixed(1)
+      : 0;
+    
+    // Estatísticas por status
+    const statusCounts = {};
+    filteredOrdens.forEach(o => {
+      statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
+    });
+    
+    // Top operadores
+    const operatorCounts = {};
+    filteredOrdens.forEach(o => {
+      if (o.operator) {
+        operatorCounts[o.operator] = (operatorCounts[o.operator] || 0) + 1;
       }
-      return o;
-    }));
-  }, []);
-
-  const handleStart = useCallback((ordemId) => {
-    setOrdens(prev => prev.map(o => {
-      if (o.id === ordemId && o.status === 'Aguardando') {
-        return { ...o, status: 'Em Produção', paused: false };
+    });
+    const topOperators = Object.entries(operatorCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, count]) => ({ name, count }));
+    
+    // Distribuição por máquina
+    const machineCounts = {};
+    filteredOrdens.forEach(o => {
+      if (o.machine) {
+        machineCounts[o.machine] = (machineCounts[o.machine] || 0) + 1;
       }
-      return o;
-    }));
-    alert(`Ordem ${ordemId} iniciada!`);
-  }, []);
+    });
+    
+    return {
+      total,
+      emProducao,
+      concluidas,
+      aguardando,
+      pausadas,
+      totalProduzido,
+      totalQuantidade,
+      progressoMedio,
+      statusCounts,
+      topOperators,
+      machineCounts
+    };
+  }, [filteredOrdens]);
 
+  // Função para pausar/retomar ordem
+  const handlePauseResume = useCallback(async (ordemId) => {
+    try {
+      const ordemIndex = ordens.findIndex(o => o.id === ordemId);
+      if (ordemIndex === -1) return;
+      
+      const ordem = ordens[ordemIndex];
+      const updatedOrdem = { ...ordem, paused: !ordem.paused };
+      
+      if (window.db) {
+        await window.db.saveOrdem(updatedOrdem);
+        await loadOrdens();
+        
+        // Notificar dashboard sobre atualização
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', updatedOrdem);
+        }
+      } else {
+        setOrdens(prev => prev.map(o => o.id === ordemId ? updatedOrdem : o));
+      }
+      
+      // Feedback visual
+      showNotification(
+        updatedOrdem.paused ? '⏸ Ordem pausada' : '▶ Ordem retomada',
+        `Ordem ${ordemId} ${updatedOrdem.paused ? 'pausada' : 'retomada'} com sucesso!`,
+        updatedOrdem.paused ? 'warning' : 'success'
+      );
+      
+    } catch (error) {
+      console.error('Erro ao pausar/retomar ordem:', error);
+      showNotification('❌ Erro', 'Não foi possível alterar o status da ordem', 'error');
+    }
+  }, [ordens, loadOrdens]);
+
+  // Função para iniciar ordem
+  const handleStart = useCallback(async (ordemId) => {
+    try {
+      const ordemIndex = ordens.findIndex(o => o.id === ordemId);
+      if (ordemIndex === -1) return;
+      
+      const now = new Date();
+      const startDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      const updatedOrdem = { 
+        ...ordens[ordemIndex], 
+        status: 'Em Produção', 
+        paused: false,
+        startDate: startDate,
+        progress: 0,
+        produced: 0
+      };
+      
+      if (window.db) {
+        await window.db.saveOrdem(updatedOrdem);
+        await loadOrdens();
+        
+        // Notificar dashboard sobre atualização
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', updatedOrdem);
+        }
+      } else {
+        setOrdens(prev => prev.map(o => o.id === ordemId ? updatedOrdem : o));
+      }
+      
+      showNotification('✅ Ordem iniciada', `Ordem ${ordemId} iniciada com sucesso!`, 'success');
+      
+    } catch (error) {
+      console.error('Erro ao iniciar ordem:', error);
+      showNotification('❌ Erro', 'Não foi possível iniciar a ordem', 'error');
+    }
+  }, [ordens, loadOrdens]);
+
+  // Função para ver detalhes
   const handleViewDetails = useCallback((ordem) => {
     setShowDetailsModal(ordem);
   }, []);
 
+  // Função para exportar ordem
   const handleExport = useCallback((ordem) => {
-    // Criar CSV com os dados da ordem
     const csvData = [
-      ['ID', 'Produto', 'Quantidade', 'Produzido', 'Status', 'Prioridade', 'Progresso', 'Operador', 'Máquina', 'Data Início', 'Prazo'],
-      [ordem.id, ordem.product, ordem.quantity, ordem.produced, ordem.status, ordem.priority, `${ordem.progress}%`, ordem.operator, ordem.machine, ordem.startDate, ordem.deadline]
+      ['ID', 'Produto', 'Quantidade', 'Produzido', 'Status', 'Prioridade', 'Progresso', 'Operador', 'Máquina', 'Data Início', 'Prazo', 'Pausada'],
+      [
+        ordem.id,
+        ordem.product,
+        ordem.quantity,
+        ordem.produced,
+        ordem.status,
+        ordem.priority,
+        `${ordem.progress}%`,
+        ordem.operator,
+        ordem.machine,
+        ordem.startDate,
+        ordem.deadline,
+        ordem.paused ? 'Sim' : 'Não'
+      ]
     ];
     
     const csv = csvData.map(row => row.join(';')).join('\n');
-    
-    // Criar e baixar o arquivo
     const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -433,115 +606,181 @@ function App() {
     link.click();
     URL.revokeObjectURL(link.href);
     
-    alert(`Ordem ${ordem.id} exportada com sucesso!`);
+    showNotification('📥 Ordem exportada', `Ordem ${ordem.id} exportada com sucesso!`, 'info');
   }, []);
 
-  // Substitua a função handleCreateNewOrder por esta versão corrigida:
-
-const handleCreateNewOrder = useCallback(() => {
-  // Validar campos obrigatórios
-  if (!newOrder.product.trim()) {
-    alert('Por favor, informe o produto!');
-    return;
-  }
-  
-  if (!newOrder.quantity || newOrder.quantity <= 0) {
-    alert('Por favor, informe uma quantidade válida!');
-    return;
-  }
-  
-  if (!newOrder.deadline) {
-    alert('Por favor, informe o prazo!');
-    return;
-  }
-  
-  // Gerar novo ID
-  const lastId = ordens.length > 0 ? 
-    Math.max(...ordens.map(o => parseInt(o.id.split('-')[2]) || 0)) : 89;
-  const newId = `OP-2025-${String(lastId + 1).padStart(3, '0')}`;
-  
-  // Formatar data atual
-  const now = new Date();
-  const startDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  
-  // Formatar data do prazo (corrigido)
-  let formattedDeadline;
-  try {
-    const deadlineDate = new Date(newOrder.deadline);
-    if (isNaN(deadlineDate.getTime())) {
-      throw new Error('Data inválida');
+  // Função para criar nova ordem
+  const handleCreateNewOrder = useCallback(async () => {
+    // Validar campos obrigatórios
+    if (!newOrder.product.trim()) {
+      showNotification('❌ Campo obrigatório', 'Por favor, informe o produto!', 'error');
+      return;
     }
-    formattedDeadline = `${deadlineDate.getDate().toString().padStart(2, '0')}/${(deadlineDate.getMonth() + 1).toString().padStart(2, '0')}/${deadlineDate.getFullYear()} ${deadlineDate.getHours().toString().padStart(2, '0')}:${deadlineDate.getMinutes().toString().padStart(2, '0')}`;
-  } catch (error) {
-    console.error('Erro ao formatar data:', error);
-    formattedDeadline = newOrder.deadline; // Usar o valor original se não conseguir formatar
-  }
-  
-  // Criar nova ordem
-  const novaOrdem = {
-    id: newId,
-    product: newOrder.product,
-    quantity: parseInt(newOrder.quantity),
-    produced: 0,
-    status: 'Aguardando',
-    priority: newOrder.priority,
-    startDate: startDate,
-    deadline: formattedDeadline,
-    progress: 0,
-    operator: newOrder.operator || 'Não definido',
-    machine: newOrder.machine || 'Máquina 01',
-    paused: false
-  };
-  
-  // Adicionar à lista
-  setOrdens(prev => [...prev, novaOrdem]);
-  
-  // Salvar no banco de dados
-  if (dbReady && window.db) {
+    
+    if (!newOrder.quantity || newOrder.quantity <= 0) {
+      showNotification('❌ Campo obrigatório', 'Por favor, informe uma quantidade válida!', 'error');
+      return;
+    }
+    
+    if (!newOrder.deadline) {
+      showNotification('❌ Campo obrigatório', 'Por favor, informe o prazo!', 'error');
+      return;
+    }
+    
+    // Gerar novo ID
+    let lastId = 89;
+    if (ordens.length > 0) {
+      const ids = ordens.map(o => {
+        const match = o.id.match(/OP-\d{4}-(\d{3})/);
+        return match ? parseInt(match[1]) : 0;
+      });
+      lastId = Math.max(...ids, 89);
+    }
+    const newId = `OP-2025-${String(lastId + 1).padStart(3, '0')}`;
+    
+    // Formatar data atual
+    const now = new Date();
+    const startDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    // Formatar data do prazo
+    let formattedDeadline;
     try {
-      window.db.saveOrdem(novaOrdem);
+      const deadlineDate = new Date(newOrder.deadline);
+      if (isNaN(deadlineDate.getTime())) {
+        throw new Error('Data inválida');
+      }
+      formattedDeadline = `${deadlineDate.getDate().toString().padStart(2, '0')}/${(deadlineDate.getMonth() + 1).toString().padStart(2, '0')}/${deadlineDate.getFullYear()} ${deadlineDate.getHours().toString().padStart(2, '0')}:${deadlineDate.getMinutes().toString().padStart(2, '0')}`;
     } catch (error) {
-      console.error('Erro ao salvar no banco:', error);
+      console.error('Erro ao formatar data:', error);
+      formattedDeadline = newOrder.deadline;
     }
-  }
-  
-  // Limpar formulário
-  setNewOrder({
-    product: '',
-    quantity: '',
-    priority: 'Normal',
-    deadline: '',
-    operator: '',
-    machine: 'Máquina 01'
-  });
-  
-  // Fechar modal
-  setShowNewOrderModal(false);
-  
-  // Mostrar mensagem de sucesso
-  setTimeout(() => {
-    alert(`✅ Nova ordem criada com sucesso!\n\nID: ${newId}\nProduto: ${novaOrdem.product}\nQuantidade: ${novaOrdem.quantity} unidades\nStatus: ${novaOrdem.status}`);
-  }, 100);
-
-
     
-    // Limpar formulário e fechar modal
-    setNewOrder({
-      product: '',
-      quantity: '',
-      priority: 'Normal',
-      deadline: '',
-      operator: '',
-      machine: 'Máquina 01'
-    });
-    setShowNewOrderModal(false);
+    // Criar nova ordem
+    const novaOrdem = {
+      id: newId,
+      product: newOrder.product,
+      quantity: parseInt(newOrder.quantity),
+      produced: 0,
+      status: newOrder.status || 'Aguardando',
+      priority: newOrder.priority,
+      startDate: startDate,
+      deadline: formattedDeadline,
+      progress: 0,
+      operator: newOrder.operator || 'Não definido',
+      machine: newOrder.machine || 'Máquina 01',
+      paused: false
+    };
     
-    alert(`Nova ordem ${newId} criada com sucesso!`);
-  }, [newOrder, ordens, dbReady]);
+    try {
+      // Salvar no banco de dados
+      if (window.db) {
+        await window.db.saveOrdem(novaOrdem);
+        await loadOrdens();
+        
+        // Notificar dashboard sobre nova ordem
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', novaOrdem);
+        }
+      } else {
+        // Fallback: salvar no estado local
+        setOrdens(prev => [novaOrdem, ...prev]);
+      }
+      
+      // Limpar formulário
+      setNewOrder({
+        product: '',
+        quantity: '',
+        priority: 'Normal',
+        deadline: '',
+        operator: '',
+        machine: 'Máquina 01',
+        status: 'Aguardando'
+      });
+      
+      // Fechar modal
+      setShowNewOrderModal(false);
+      
+      // Mostrar mensagem de sucesso
+      showNotification(
+        '✅ Nova ordem criada',
+        `ID: ${newId}<br>Produto: ${novaOrdem.product}<br>Quantidade: ${novaOrdem.quantity} unidades<br>Status: ${novaOrdem.status}`,
+        'success'
+      );
+      
+    } catch (error) {
+      console.error('Erro ao salvar nova ordem:', error);
+      showNotification('❌ Erro', 'Não foi possível criar a nova ordem', 'error');
+    }
+  }, [newOrder, ordens, loadOrdens]);
 
+  // Função para deletar ordem
+  const handleDeleteOrder = useCallback(async (ordemId) => {
+    if (!confirm(`Tem certeza que deseja excluir a ordem ${ordemId}? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    
+    try {
+      if (window.db) {
+        await window.db.deleteOrdem(ordemId);
+        await loadOrdens();
+        
+        // Notificar dashboard sobre exclusão
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', { deleted: ordemId });
+        }
+      } else {
+        // Fallback: remover do estado local
+        setOrdens(prev => prev.filter(o => o.id !== ordemId));
+      }
+      
+      showNotification('🗑️ Ordem excluída', `Ordem ${ordemId} excluída com sucesso!`, 'warning');
+      
+    } catch (error) {
+      console.error('Erro ao excluir ordem:', error);
+      showNotification('❌ Erro', 'Não foi possível excluir a ordem', 'error');
+    }
+  }, [loadOrdens]);
+
+  // Função para atualizar status da ordem
+  const handleUpdateStatus = useCallback(async (ordemId, newStatus) => {
+    try {
+      const ordemIndex = ordens.findIndex(o => o.id === ordemId);
+      if (ordemIndex === -1) return;
+      
+      const updatedOrdem = { ...ordens[ordemIndex], status: newStatus };
+      
+      // Se for marcada como concluída, garantir progresso 100%
+      if (newStatus === 'Concluída') {
+        updatedOrdem.progress = 100;
+        updatedOrdem.produced = updatedOrdem.quantity;
+        updatedOrdem.paused = false;
+      }
+      
+      if (window.db) {
+        await window.db.saveOrdem(updatedOrdem);
+        await loadOrdens();
+        
+        // Notificar dashboard sobre atualização
+        if (window.db.emitDataChange) {
+          window.db.emitDataChange('ordemUpdated', updatedOrdem);
+        }
+      } else {
+        setOrdens(prev => prev.map(o => o.id === ordemId ? updatedOrdem : o));
+      }
+      
+      showNotification('✅ Status atualizado', `Ordem ${ordemId} atualizada para: ${newStatus}`, 'success');
+      setShowUpdateStatusModal(null);
+      
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      showNotification('❌ Erro', 'Não foi possível atualizar o status', 'error');
+    }
+  }, [ordens, loadOrdens]);
+
+  // Função para gerar relatório
   const handleGenerateReport = useCallback(() => {
     if (ordens.length === 0) {
-      alert('Não há ordens para gerar relatório!');
+      showNotification('❌ Sem dados', 'Não há ordens para gerar relatório!', 'error');
       return;
     }
     
@@ -555,7 +794,7 @@ const handleCreateNewOrder = useCallback(() => {
       [`Aguardando: ${ordens.filter(o => o.status === 'Aguardando').length}`],
       [''],
       ['DETALHES DAS ORDENS'],
-      ['ID;Produto;Quantidade;Produzido;Status;Prioridade;Progresso;Operador;Máquina;Data Início;Prazo']
+      ['ID;Produto;Quantidade;Produzido;Status;Prioridade;Progresso;Operador;Máquina;Data Início;Prazo;Pausada']
     ];
     
     // Adicionar cada ordem ao relatório
@@ -571,7 +810,8 @@ const handleCreateNewOrder = useCallback(() => {
         ordem.operator,
         ordem.machine,
         ordem.startDate,
-        ordem.deadline
+        ordem.deadline,
+        ordem.paused ? 'Sim' : 'Não'
       ].join(';'));
     });
     
@@ -591,8 +831,6 @@ const handleCreateNewOrder = useCallback(() => {
     });
     
     const csv = reportData.join('\n');
-    
-    // Criar e baixar o arquivo
     const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -600,34 +838,52 @@ const handleCreateNewOrder = useCallback(() => {
     link.click();
     URL.revokeObjectURL(link.href);
     
-    alert('Relatório gerado com sucesso!');
+    showNotification('📊 Relatório gerado', 'Relatório exportado com sucesso!', 'success');
   }, [ordens]);
 
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'Em Produção': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'Concluída': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'Aguardando': return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // Função para mostrar notificações
+  const showNotification = useCallback((title, message, type = 'info') => {
+    const notification = document.createElement('div');
+    const typeClasses = {
+      success: dark ? 'bg-green-800 text-green-100' : 'bg-green-100 text-green-800',
+      error: dark ? 'bg-red-800 text-red-100' : 'bg-red-100 text-red-800',
+      warning: dark ? 'bg-yellow-800 text-yellow-100' : 'bg-yellow-100 text-yellow-800',
+      info: dark ? 'bg-blue-800 text-blue-100' : 'bg-blue-100 text-blue-800'
+    };
+    
+    notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg animate-fade-in z-50 ${typeClasses[type]}`;
+    notification.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">${type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+        <div>
+          <div class="font-semibold">${title}</div>
+          <div class="text-sm">${message}</div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+      notification.remove();
+    }, 5000);
+  }, [dark]);
 
-  const getPriorityColor = (priority) => {
-    switch(priority) {
-      case 'Alta': return 'text-red-600 dark:text-red-400';
-      case 'Normal': return 'text-blue-600 dark:text-blue-400';
-      case 'Baixa': return 'text-gray-600 dark:text-gray-400';
-      default: return 'text-gray-600';
-    }
-  };
+  // Função para limpar filtros
+  const handleClearFilters = useCallback(() => {
+    setStatusFilter('Todos');
+    setPriorityFilter('Todos');
+    setSearchTerm('');
+    showNotification('🧹 Filtros limpos', 'Todos os filtros foram resetados', 'info');
+  }, []);
 
   const navigationItems = [
     { name: 'Dashboard', icon: '🏠', url: 'index.html' },
     { name: 'Coleta', icon: '📋', url: 'coleta.html' },
     { name: 'Ordens', icon: '📦', url: 'ordem.html' },
     { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
+    { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
     { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
-    { name: 'Receitas', icon: '🧑‍🍳', url: 'Receitas.html' }
+    { name: 'Receitas', icon: '🧑‍🍳', url: 'receitas.html' }
   ];
   
   return (
@@ -701,9 +957,9 @@ const handleCreateNewOrder = useCallback(() => {
               </div>
               <button
                 className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
-                onClick={() => handleGenerateReport()}
+                onClick={() => setShowStatsModal(true)}
               >
-                📊 Relatório
+                📊 Estatísticas
               </button>
               <button
                 className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
@@ -715,41 +971,124 @@ const handleCreateNewOrder = useCallback(() => {
           </header>
 
           <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <SummaryCard label="Total de Ordens" value={stats.total} color="green" dark={dark} />
-            <SummaryCard label="Em Produção" value={stats.emProducao} color="blue" dark={dark} />
-            <SummaryCard label="Concluídas" value={stats.concluidas} color="green" dark={dark} />
-            <SummaryCard label="Aguardando" value={stats.aguardando} color="gray" dark={dark} />
+            <SummaryCard 
+              label="Total de Ordens" 
+              value={stats.total} 
+              color="green" 
+              dark={dark}
+              icon="📦"
+              subtitle={`${stats.emProducao} em produção`}
+            />
+            <SummaryCard 
+              label="Em Produção" 
+              value={stats.emProducao} 
+              color="blue" 
+              dark={dark}
+              icon="⚙️"
+              subtitle={`${stats.pausadas} pausadas`}
+            />
+            <SummaryCard 
+              label="Concluídas" 
+              value={stats.concluidas} 
+              color="green" 
+              dark={dark}
+              icon="✅"
+              subtitle={`${Math.round((stats.concluidas / stats.total) * 100) || 0}% do total`}
+            />
+            <SummaryCard 
+              label="Progresso Médio" 
+              value={`${stats.progressoMedio}%`} 
+              color="blue" 
+              dark={dark}
+              icon="📈"
+              subtitle={`${stats.totalProduzido.toLocaleString()} de ${stats.totalQuantidade.toLocaleString()} un.`}
+            />
           </section>
 
           <section className={`p-5 rounded-xl shadow-md mb-6 animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
-            <h3 className="font-semibold mb-4 text-lg">Filtros</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Filtros</h3>
+              <div className="flex gap-2">
+                <button
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
+                  onClick={handleGenerateReport}
+                >
+                  📊 Relatório
+                </button>
+                <button
+                  className="px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
+                  onClick={handleClearFilters}
+                >
+                  🧹 Limpar
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={["Todos","Em Produção","Concluída","Aguardando"]} dark={dark} />
+              <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={["Todos","Em Produção","Concluída","Aguardando","Cancelada"]} dark={dark} />
               <FilterSelect label="Prioridade" value={priorityFilter} onChange={setPriorityFilter} options={["Todos","Alta","Normal","Baixa"]} dark={dark} />
-              <FilterInput label="Buscar" placeholder="ID ou produto" value={searchTerm} onChange={setSearchTerm} dark={dark} />
+              <FilterInput label="Buscar" placeholder="ID, produto ou operador" value={searchTerm} onChange={setSearchTerm} dark={dark} />
             </div>
           </section>
 
-          <section className="space-y-4">
-            {filteredOrdens.map((ordem, idx) => (
-              <OrderCard 
-                key={ordem.id} 
-                ordem={ordem} 
-                idx={idx} 
-                dark={dark} 
-                getStatusColor={getStatusColor} 
-                getPriorityColor={getPriorityColor}
-                onPauseResume={handlePauseResume}
-                onStart={handleStart}
-                onViewDetails={handleViewDetails}
-                onExport={handleExport}
-              />
-            ))}
-            {filteredOrdens.length === 0 && (
-              <div className={`p-12 rounded-xl text-center ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
-                <div className="text-6xl mb-4">📋</div>
+          {/* Tabela de ordens */}
+          <section className={`rounded-xl shadow-md overflow-hidden animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+            <div className="p-5 border-b dark:border-gray-700 flex justify-between items-center">
+              <h3 className="font-semibold text-lg">Lista de Ordens</h3>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {isLoading ? 'Carregando...' : `${filteredOrdens.length} ordens encontradas`}
+              </div>
+            </div>
+            
+            {isLoading ? (
+              <div className="p-8 text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                <div className="mt-4 text-gray-500 dark:text-gray-400">Carregando ordens...</div>
+              </div>
+            ) : filteredOrdens.length === 0 ? (
+              <div className="p-12 text-center">
+                <div className="text-6xl mb-4">📦</div>
                 <div className="text-xl font-semibold mb-2">Nenhuma ordem encontrada</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">Ajuste os filtros para ver mais resultados</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Ajuste os filtros ou crie uma nova ordem
+                </div>
+                <button
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition"
+                  onClick={() => setShowNewOrderModal(true)}
+                >
+                  + Criar Primeira Ordem
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className={`${dark ? 'bg-gray-900' : 'bg-gray-50'} border-b dark:border-gray-700`}>
+                    <tr>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">ID/Produto</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Status</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Prioridade</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Quantidade</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Produzido</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Progresso</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Operador/Máquina</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-500 dark:text-gray-400">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrdens.map((ordem, idx) => (
+                      <OrderRow 
+                        key={ordem.id} 
+                        ordem={ordem} 
+                        dark={dark}
+                        onViewDetails={handleViewDetails}
+                        onPauseResume={handlePauseResume}
+                        onStart={handleStart}
+                        onExport={handleExport}
+                        onDelete={handleDeleteOrder}
+                        onUpdateStatus={handleUpdateStatus}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
@@ -763,10 +1102,10 @@ const handleCreateNewOrder = useCallback(() => {
         </main>
       </div>
 
-      {/* Modal Detalhes */}
+      {/* Modal Detalhes da Ordem */}
       <Modal isOpen={showDetailsModal !== null} onClose={() => setShowDetailsModal(null)} title={`Detalhes da Ordem ${showDetailsModal?.id}`}>
         {showDetailsModal && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">Produto</div>
@@ -774,12 +1113,10 @@ const handleCreateNewOrder = useCallback(() => {
               </div>
               <div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">Status</div>
-                <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(showDetailsModal.status)}`}>
-                  {showDetailsModal.status}
-                </div>
+                <div><StatusBadge status={showDetailsModal.status} /></div>
               </div>
               <div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">Quantidade</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">Quantidade Total</div>
                 <div className="font-medium">{showDetailsModal.quantity} unidades</div>
               </div>
               <div>
@@ -788,7 +1125,7 @@ const handleCreateNewOrder = useCallback(() => {
               </div>
               <div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">Prioridade</div>
-                <div className={`font-medium ${getPriorityColor(showDetailsModal.priority)}`}>{showDetailsModal.priority}</div>
+                <div><PriorityBadge priority={showDetailsModal.priority} /></div>
               </div>
               <div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">Progresso</div>
@@ -799,7 +1136,7 @@ const handleCreateNewOrder = useCallback(() => {
                 <div className="font-medium">{showDetailsModal.operator}</div>
               </div>
               <div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">Máquina</div>
+                <div className="text-sm text-gray500 dark:text-gray-400">Máquina</div>
                 <div className="font-medium">{showDetailsModal.machine}</div>
               </div>
               <div>
@@ -810,12 +1147,23 @@ const handleCreateNewOrder = useCallback(() => {
                 <div className="text-sm text-gray-500 dark:text-gray-400">Prazo</div>
                 <div className="font-medium">{showDetailsModal.deadline}</div>
               </div>
+              {showDetailsModal.paused && (
+                <div className="col-span-2">
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Status de Produção</div>
+                  <div className="font-medium text-yellow-600 dark:text-yellow-400">⏸️ PAUSADA</div>
+                </div>
+              )}
             </div>
             
             <div className={`p-4 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-50'}`}>
               <div className="text-sm font-medium mb-2">Progresso Visual</div>
               <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-4">
                 <div className="bg-gradient-to-r from-blue-500 to-blue-400 h-4 rounded-full smooth-transition" style={{ width: `${showDetailsModal.progress}%` }}></div>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                <span>0%</span>
+                <span>{showDetailsModal.progress}%</span>
+                <span>100%</span>
               </div>
             </div>
 
@@ -870,6 +1218,19 @@ const handleCreateNewOrder = useCallback(() => {
             </div>
             
             <div>
+              <label className="block text-sm font-medium mb-2">Status</label>
+              <select
+                value={newOrder.status}
+                onChange={(e) => setNewOrder({...newOrder, status: e.target.value})}
+                className={`w-full p-2 rounded-lg border smooth-transition ${dark ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}
+              >
+                <option value="Aguardando">Aguardando</option>
+                <option value="Em Produção">Em Produção</option>
+                <option value="Concluída">Concluída</option>
+              </select>
+            </div>
+            
+            <div>
               <label className="block text-sm font-medium mb-2">Prioridade</label>
               <select
                 value={newOrder.priority}
@@ -904,7 +1265,7 @@ const handleCreateNewOrder = useCallback(() => {
               />
             </div>
             
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-2">Máquina</label>
               <select
                 value={newOrder.machine}
@@ -914,6 +1275,7 @@ const handleCreateNewOrder = useCallback(() => {
                 <option value="Máquina 01">Máquina 01</option>
                 <option value="Máquina 02">Máquina 02</option>
                 <option value="Máquina 03">Máquina 03</option>
+                <option value="Máquina 04">Máquina 04</option>
               </select>
             </div>
           </div>
@@ -933,6 +1295,140 @@ const handleCreateNewOrder = useCallback(() => {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal Estatísticas */}
+      <Modal isOpen={showStatsModal} onClose={() => setShowStatsModal(false)} title="Estatísticas das Ordens">
+        <div className="space-y-6">
+          {/* Resumo geral */}
+          <div className={`p-4 rounded-lg ${dark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+            <h4 className="font-semibold mb-3">Resumo Geral</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.total}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Total Ordens</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.emProducao}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Em Produção</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.concluidas}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Concluídas</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.progressoMedio}%</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Progresso Médio</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Distribuição por status */}
+          <div>
+            <h4 className="font-semibold mb-3">Distribuição por Status</h4>
+            <div className="space-y-2">
+              {Object.entries(stats.statusCounts).map(([status, count]) => (
+                <div key={status} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={status} />
+                    <span className="text-sm">{status}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium">{count}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      ({Math.round((count / stats.total) * 100)}%)
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top operadores */}
+          {stats.topOperators.length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-3">Top Operadores</h4>
+              <div className="space-y-2">
+                {stats.topOperators.map((operator, idx) => (
+                  <div key={operator.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">#{idx + 1}</span>
+                      <span className="font-medium">{operator.name}</span>
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {operator.count} ordem(ns)
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Distribuição por máquina */}
+          {Object.keys(stats.machineCounts).length > 0 && (
+            <div>
+              <h4 className="font-semibold mb-3">Distribuição por Máquina</h4>
+              <div className="space-y-2">
+                {Object.entries(stats.machineCounts).map(([machine, count]) => (
+                  <div key={machine} className="flex items-center justify-between">
+                    <div className="text-sm">{machine}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-medium">{count}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        ({Math.round((count / stats.total) * 100)}%)
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-4 border-t dark:border-gray-700">
+            <button 
+              className="w-full py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:shadow-lg smooth-transition"
+              onClick={handleGenerateReport}
+            >
+              📊 Exportar Relatório Completo
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Atualizar Status */}
+      <Modal isOpen={showUpdateStatusModal !== null} onClose={() => setShowUpdateStatusModal(null)} title={`Atualizar Status - ${showUpdateStatusModal?.id}`}>
+        {showUpdateStatusModal && (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Selecione o novo status para a ordem {showUpdateStatusModal.id}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              {['Aguardando', 'Em Produção', 'Concluída', 'Cancelada'].map((status) => (
+                <button
+                  key={status}
+                  className={`p-3 rounded-lg border smooth-transition ${
+                    showUpdateStatusModal.status === status
+                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                      : 'border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700'
+                  }`}
+                  onClick={() => handleUpdateStatus(showUpdateStatusModal.id, status)}
+                >
+                  <StatusBadge status={status} />
+                </button>
+              ))}
+            </div>
+            
+            <div className="flex gap-2 pt-4">
+              <button
+                className="flex-1 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 smooth-transition"
+                onClick={() => setShowUpdateStatusModal(null)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

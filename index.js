@@ -178,10 +178,26 @@ function App() {
   const [dbReady, setDbReady] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // Estatísticas dos módulos
-  const [coletaStats, setColetaStats] = useState({ totalColetas: 0, totalProduzido: 0 });
-  const [ordensStats, setOrdensStats] = useState({ totalOrdens: 0, emProducao: 0, concluidas: 0 });
-  const [relatoriosStats, setRelatoriosStats] = useState({ totalRelatorios: 0, concluidos: 0 });
+  // Estatísticas dos módulos (AGORA COM DADOS REAIS)
+  const [coletaStats, setColetaStats] = useState({ 
+    totalColetas: 0, 
+    totalProduzido: 0,
+    eficienciaMedia: 0,
+    ultimaAtualizacao: ''
+  });
+  const [ordensStats, setOrdensStats] = useState({ 
+    totalOrdens: 0, 
+    emProducao: 0, 
+    concluidas: 0,
+    aguardando: 0,
+    ultimaAtualizacao: ''
+  });
+  const [relatoriosStats, setRelatoriosStats] = useState({ 
+    totalRelatorios: 0, 
+    concluidos: 0,
+    emAnalise: 0,
+    ultimaAtualizacao: ''
+  });
   
   const [productionRate, setProductionRate] = useState(1.0);
   const [sensors, setSensors] = useState({
@@ -203,6 +219,96 @@ function App() {
   
   const offlineQueueRef = useRef([]);
   const lastAlertRef = useRef({});
+  const lastStatsUpdateRef = useRef(Date.now());
+
+  // === FUNÇÕES DE CARREGAMENTO DE ESTATÍSTICAS ===
+  const loadAllStats = useCallback(async () => {
+    try {
+      if (!window.db) {
+        console.warn('Banco de dados não disponível');
+        return;
+      }
+
+      const updateTime = new Date().toLocaleTimeString('pt-BR');
+      
+      // Carregar estatísticas de COLETAS
+      try {
+        const coletas = await window.db.getColetas();
+        const totalProduzido = coletas.reduce((sum, c) => sum + (c.produced || 0), 0);
+        const eficienciaMedia = coletas.length > 0 
+          ? coletas.reduce((sum, c) => sum + (c.efficiency || 0), 0) / coletas.length 
+          : 0;
+        
+        setColetaStats({
+          totalColetas: coletas.length,
+          totalProduzido: parseFloat(totalProduzido.toFixed(2)),
+          eficienciaMedia: parseFloat(eficienciaMedia.toFixed(1)),
+          ultimaAtualizacao: updateTime
+        });
+        
+        console.log('Coletas carregadas:', coletas.length, 'total:', totalProduzido);
+      } catch (error) {
+        console.error('Erro ao carregar coletas:', error);
+        setColetaStats(prev => ({
+          ...prev,
+          ultimaAtualizacao: `Erro: ${updateTime}`
+        }));
+      }
+
+      // Carregar estatísticas de ORDENS
+      try {
+        const ordens = await window.db.getOrdens();
+        const emProducao = ordens.filter(o => o.status === 'Em Produção').length;
+        const concluidas = ordens.filter(o => o.status === 'Concluída').length;
+        const aguardando = ordens.filter(o => o.status === 'Aguardando').length;
+        
+        setOrdensStats({
+          totalOrdens: ordens.length,
+          emProducao,
+          concluidas,
+          aguardando,
+          ultimaAtualizacao: updateTime
+        });
+        
+        console.log('Ordens carregadas:', ordens.length, 'em produção:', emProducao);
+      } catch (error) {
+        console.error('Erro ao carregar ordens:', error);
+        setOrdensStats(prev => ({
+          ...prev,
+          ultimaAtualizacao: `Erro: ${updateTime}`
+        }));
+      }
+
+      // Carregar estatísticas de RELATÓRIOS
+      try {
+        const relatorios = await window.db.getRelatorios();
+        const concluidos = relatorios.filter(r => r.status === 'Concluído').length;
+        const emAnalise = relatorios.filter(r => r.status === 'Em análise').length;
+        
+        setRelatoriosStats({
+          totalRelatorios: relatorios.length,
+          concluidos,
+          emAnalise,
+          ultimaAtualizacao: updateTime
+        });
+        
+        console.log('Relatórios carregados:', relatorios.length, 'concluídos:', concluidos);
+      } catch (error) {
+        console.error('Erro ao carregar relatórios:', error);
+        setRelatoriosStats(prev => ({
+          ...prev,
+          ultimaAtualizacao: `Erro: ${updateTime}`
+        }));
+      }
+
+      // Registrar auditoria
+      await setAudit('Dashboard', 'Estatísticas atualizadas');
+      lastStatsUpdateRef.current = Date.now();
+      
+    } catch (error) {
+      console.error('Erro geral ao carregar estatísticas:', error);
+    }
+  }, []);
 
   // Inicializar banco de dados e tema
   useEffect(() => {
@@ -252,6 +358,9 @@ function App() {
         const alertsData = await window.db.getRecentAlerts(10);
         if (alertsData.length > 0) setAlerts(alertsData);
         
+        // Carregar estatísticas iniciais
+        await loadAllStats();
+        
         setDbReady(true);
         
         // Cleanup
@@ -263,78 +372,7 @@ function App() {
     };
     
     initDB();
-  }, []);
-
-  // Carregar estatísticas dos módulos
-  useEffect(() => {
-    const loadModuleStats = async () => {
-      try {
-        if (dbReady && window.db) {
-          // Carregar estatísticas de coleta
-          try {
-            const coletas = await window.db.getColetas();
-            const totalProduzido = coletas.reduce((sum, c) => sum + (c.produced || 0), 0);
-            setColetaStats({
-              totalColetas: coletas.length,
-              totalProduzido: parseFloat(totalProduzido.toFixed(2))
-            });
-          } catch (error) {
-            console.error('Erro ao carregar estatísticas de coleta:', error);
-            setColetaStats({ totalColetas: 8, totalProduzido: 480 });
-          }
-
-          // Carregar estatísticas de ordens
-          try {
-            const ordens = await window.db.getOrdens();
-            const emProducao = ordens.filter(o => o.status === 'Em Produção').length;
-            const concluidas = ordens.filter(o => o.status === 'Concluída').length;
-            setOrdensStats({
-              totalOrdens: ordens.length,
-              emProducao,
-              concluidas
-            });
-          } catch (error) {
-            console.error('Erro ao carregar estatísticas de ordens:', error);
-            setOrdensStats({ totalOrdens: 5, emProducao: 2, concluidas: 2 });
-          }
-
-          // Carregar estatísticas de relatórios
-          try {
-            const relatorios = await window.db.getRelatorios();
-            const concluidos = relatorios.filter(r => r.status === 'Concluído').length;
-            setRelatoriosStats({
-              totalRelatorios: relatorios.length,
-              concluidos
-            });
-          } catch (error) {
-            console.error('Erro ao carregar estatísticas de relatórios:', error);
-            setRelatoriosStats({ totalRelatorios: 6, concluidos: 4 });
-          }
-        } else {
-          // Dados de exemplo se o banco não estiver pronto
-          setColetaStats({
-            totalColetas: 8,
-            totalProduzido: 480
-          });
-          setOrdensStats({
-            totalOrdens: 5,
-            emProducao: 2,
-            concluidas: 2
-          });
-          setRelatoriosStats({
-            totalRelatorios: 6,
-            concluidos: 4
-          });
-        }
-      } catch (error) {
-        console.error('Erro geral ao carregar estatísticas dos módulos:', error);
-      }
-    };
-
-    if (dbReady) {
-      loadModuleStats();
-    }
-  }, [dbReady]);
+  }, [loadAllStats]);
 
   // Salvar configurações quando mudarem
   useEffect(() => {
@@ -382,6 +420,7 @@ function App() {
     setDark(prev => !prev);
   };
 
+  // Monitorar status online/offline
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -392,6 +431,47 @@ function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Atualizar estatísticas automaticamente
+  useEffect(() => {
+    if (!dbReady) return;
+
+    // Atualizar a cada 30 segundos
+    const interval = setInterval(() => {
+      loadAllStats();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [dbReady, loadAllStats]);
+
+  // Escutar eventos de mudança de dados (se disponível)
+  useEffect(() => {
+    if (!dbReady || !window.db) return;
+
+    // Tentar usar sistema de eventos se disponível
+    if (window.db.onDataChange) {
+      const unsubscribeColeta = window.db.onDataChange('coletaUpdated', () => {
+        console.log('Coleta atualizada - recarregando estatísticas');
+        loadAllStats();
+      });
+
+      const unsubscribeOrdem = window.db.onDataChange('ordemUpdated', () => {
+        console.log('Ordem atualizada - recarregando estatísticas');
+        loadAllStats();
+      });
+
+      const unsubscribeRelatorio = window.db.onDataChange('relatorioUpdated', () => {
+        console.log('Relatório atualizado - recarregando estatísticas');
+        loadAllStats();
+      });
+
+      return () => {
+        if (unsubscribeColeta) unsubscribeColeta();
+        if (unsubscribeOrdem) unsubscribeOrdem();
+        if (unsubscribeRelatorio) unsubscribeRelatorio();
+      };
+    }
+  }, [dbReady, loadAllStats]);
 
   useEffect(() => {
     if (isOnline && offlineQueueRef.current.length > 0) {
@@ -607,6 +687,7 @@ function App() {
     { name: 'Coleta', icon: '📋', url: 'coleta.html' },
     { name: 'Ordens', icon: '📦', url: 'ordem.html' },
     { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
+    { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
     { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
     { name: 'Receitas', icon: '🧑‍🍳', url: 'receitas.html' }
   ];
@@ -681,6 +762,13 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button 
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg shadow-md hover:shadow-lg smooth-transition hover:scale-105"
+                onClick={loadAllStats}
+                title="Atualizar dados dos módulos"
+              >
+                🔄 Atualizar
+              </button>
               <div className={`flex items-center text-sm px-4 py-2 rounded-full smooth-transition ${isOnline ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}`}>
                 <span className={`w-2 h-2 rounded-full mr-2 ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
                 {isOnline ? 'Online' : 'Offline'}
@@ -715,9 +803,9 @@ function App() {
             </div>
           </section>
 
-          {/* Cartões de Estatísticas dos Módulos */}
+          {/* Cartões de Estatísticas dos Módulos - DADOS REAIS */}
           <section className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            {/* Coletas */}
+            {/* Coletas - Dados reais */}
             <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Coletas</div>
@@ -725,12 +813,20 @@ function App() {
               </div>
               <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{coletaStats.totalColetas}</div>
               <div className="text-xs text-gray-400 mt-1">Total de coletas</div>
-              <div className="text-sm text-green-600 dark:text-green-400 mt-2">
-                {coletaStats.totalProduzido.toFixed(1)} kg produzidos
+              <div className="mt-2 space-y-1">
+                <div className="text-sm text-green-600 dark:text-green-400">
+                  {coletaStats.totalProduzido.toFixed(1)} kg produzidos
+                </div>
+                <div className="text-sm text-amber-600 dark:text-amber-400">
+                  {coletaStats.eficienciaMedia}% eficiência
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Atualizado: {coletaStats.ultimaAtualizacao || 'Nunca'}
+                </div>
               </div>
             </div>
 
-            {/* Ordens */}
+            {/* Ordens - Dados reais */}
             <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`} style={{ animationDelay: '0.1s' }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Ordens</div>
@@ -738,17 +834,22 @@ function App() {
               </div>
               <div className="text-3xl font-bold text-green-600 dark:text-green-400">{ordensStats.totalOrdens}</div>
               <div className="text-xs text-gray-400 mt-1">Total de ordens</div>
-              <div className="mt-2 flex gap-2">
-                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded">
-                  {ordensStats.emProducao} produção
-                </span>
-                <span className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded">
-                  {ordensStats.concluidas} concluídas
-                </span>
+              <div className="mt-2 space-y-2">
+                <div className="flex gap-2">
+                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded">
+                    {ordensStats.emProducao} produção
+                  </span>
+                  <span className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded">
+                    {ordensStats.concluidas} concluídas
+                  </span>
+                </div>
+                <div className="text-xs text-gray-400">
+                  Atualizado: {ordensStats.ultimaAtualizacao || 'Nunca'}
+                </div>
               </div>
             </div>
 
-            {/* Relatórios */}
+            {/* Relatórios - Dados reais */}
             <div className={`p-5 rounded-xl shadow-md card-hover animate-fade-in ${dark ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`} style={{ animationDelay: '0.2s' }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm text-gray-500 dark:text-gray-400">Relatórios</div>
@@ -756,8 +857,16 @@ function App() {
               </div>
               <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{relatoriosStats.totalRelatorios}</div>
               <div className="text-xs text-gray-400 mt-1">Relatórios gerados</div>
-              <div className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-                {relatoriosStats.concluidos} concluídos
+              <div className="mt-2 space-y-1">
+                <div className="text-sm text-amber-600 dark:text-amber-400">
+                  {relatoriosStats.concluidos} concluídos
+                </div>
+                <div className="text-sm text-blue-600 dark:text-blue-400">
+                  {relatoriosStats.emAnalise} em análise
+                </div>
+                <div className="text-xs text-gray-400 mt-2">
+                  Atualizado: {relatoriosStats.ultimaAtualizacao || 'Nunca'}
+                </div>
               </div>
             </div>
 
@@ -771,11 +880,13 @@ function App() {
                 {efficiency}%
               </div>
               <div className="text-xs text-gray-400 mt-1">Baseado na produção</div>
-              <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full smooth-transition ${efficiency >= 90 ? 'bg-gradient-to-r from-green-500 to-green-400' : efficiency >= 75 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-red-500 to-red-400'}`}
-                  style={{ width: `${Math.min(efficiency, 100)}%` }}
-                ></div>
+              <div className="mt-2">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div 
+                    className={`h-2 rounded-full smooth-transition ${efficiency >= 90 ? 'bg-gradient-to-r from-green-500 to-green-400' : efficiency >= 75 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-red-500 to-red-400'}`}
+                    style={{ width: `${Math.min(efficiency, 100)}%` }}
+                  ></div>
+                </div>
               </div>
             </div>
           </section>

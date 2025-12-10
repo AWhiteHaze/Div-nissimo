@@ -117,64 +117,88 @@ function LoginPage() {
   };
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setErro('');
+  e.preventDefault();
+  setErro('');
 
-    if (!email || !senha) {
-      setErro('Por favor, preencha todos os campos');
+  if (!email || !senha) {
+    setErro('Por favor, preencha todos os campos');
+    return;
+  }
+
+  if (!validarEmail(email)) {
+    setErro('Email inválido');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // Autenticar com Supabase
+    const { data: usuario, error } = await window.supabaseClient
+      .from('usuarios')
+      .select('*')
+      .eq('email', email)
+      .eq('ativo', true)
+      .single();
+
+    if (error || !usuario) {
+      setErro('Email ou senha incorretos');
+      setLoading(false);
       return;
     }
 
-    if (!validarEmail(email)) {
-      setErro('Email inválido');
+    // NOTA: Em produção, use hash de senha (bcrypt)
+    // Por enquanto, validação simplificada
+    const senhasValidas = {
+      'admin@divinissimo.com.br': 'admin123',
+      'supervisor@divinissimo.com.br': 'super123',
+      'operador@divinissimo.com.br': 'oper123',
+      'qualidade@divinissimo.com.br': 'quali123'
+    };
+
+    if (senhasValidas[email] !== senha) {
+      setErro('Email ou senha incorretos');
+      setLoading(false);
       return;
     }
 
-    if (senha.length < 6) {
-      setErro('A senha deve ter no mínimo 6 caracteres');
-      return;
+    // Salvar sessão
+    const sessao = {
+      id: usuario.id,
+      email: usuario.email,
+      nome: usuario.nome,
+      perfil: usuario.perfil,
+      timestamp: new Date().toISOString()
+    };
+    
+    localStorage.setItem('usuario', JSON.stringify(sessao));
+    
+    if (lembrar) {
+      localStorage.setItem('lembrar', 'true');
+      localStorage.setItem('email', email);
     }
 
-    setLoading(true);
+    // Registrar audit log
+    await window.supabaseClient
+      .from('audit_log')
+      .insert({
+        usuario_id: usuario.id,
+        user_name: usuario.nome,
+        action: `Login realizado - ${usuario.perfil}`,
+        ip_address: await fetch('https://api.ipify.org?format=json')
+          .then(r => r.json())
+          .then(d => d.ip)
+          .catch(() => 'N/A')
+      });
 
-    setTimeout(() => {
-      const usuarios = [
-        { email: 'admin@divinissimo.com.br', senha: 'admin123', perfil: 'Admin', nome: 'Administrador' },
-        { email: 'supervisor@divinissimo.com.br', senha: 'super123', perfil: 'Supervisor', nome: 'Supervisor' },
-        { email: 'operador@divinissimo.com.br', senha: 'oper123', perfil: 'Operador', nome: 'Operador' },
-        { email: 'qualidade@divinissimo.com.br', senha: 'quali123', perfil: 'Qualidade', nome: 'Analista' },
-      ];
-
-      const usuario = usuarios.find(u => u.email === email && u.senha === senha);
-
-      if (usuario) {
-        const sessao = {
-          email: usuario.email,
-          nome: usuario.nome,
-          perfil: usuario.perfil,
-          timestamp: new Date().toISOString()
-        };
-        localStorage.setItem('usuario', JSON.stringify(sessao));
-        
-        if (lembrar) {
-          localStorage.setItem('lembrar', 'true');
-          localStorage.setItem('email', email);
-        } else {
-          localStorage.removeItem('lembrar');
-          localStorage.removeItem('email');
-        }
-
-        if (dbReady && window.db) {
-          window.db.addAuditLog(usuario.nome, `Login realizado - ${usuario.perfil}`);
-        }
-
-        window.location.href = 'index.html';
-      } else {
-        setErro('Email ou senha incorretos');
-        setLoading(false);
-      }
-    }, 1500);
-  };
+    window.location.href = 'index.html';
+    
+  } catch (error) {
+    console.error('Erro ao fazer login:', error);
+    setErro('Erro ao conectar com o servidor');
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     const lembrarAtivo = localStorage.getItem('lembrar');

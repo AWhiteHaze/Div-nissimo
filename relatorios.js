@@ -362,6 +362,7 @@ ${Object.entries(relatorio.dados).map(([key, value]) => `• ${key}: ${value}`).
     { name: 'Coleta', icon: '📋', url: 'coleta.html' },
     { name: 'Ordens', icon: '📦', url: 'ordem.html' },
     { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
+    { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
     { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
     { name: 'Receitas', icon: '🧑‍🍳', url: 'Receitas.html' }
   ];
