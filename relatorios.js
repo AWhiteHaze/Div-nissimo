@@ -364,7 +364,7 @@ ${Object.entries(relatorio.dados).map(([key, value]) => `• ${key}: ${value}`).
     { name: 'Qualidade', icon: '🔬', url: 'qualidade.html' },
     { name: 'Fornecedores', icon: '🏭', url: 'fornecedores.html' },
     { name: 'Relatórios', icon: '📈', url: 'relatorios.html' },
-    { name: 'Receitas', icon: '🧑‍🍳', url: 'Receitas.html' }
+    { name: 'Receitas', icon: '🧑‍🍳', url: 'receitas.html' }
   ];
   
   // Modal para novo relatório
@@ -772,4 +772,5 @@ ${Object.entries(relatorio.dados).map(([key, value]) => `• ${key}: ${value}`).
 // Renderizar na página
 const container = document.getElementById('root');
 const root = ReactDOM.createRoot(container);
+
 root.render(<Relatorios />);
